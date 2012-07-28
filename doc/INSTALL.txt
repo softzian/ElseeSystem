@@ -1,0 +1,26 @@
+Install guide
+------------------------------------------------------------
+
+Tools:
+	- FASM (http://flatassembler.net/)
+	- Bochs (http://bochs.sourceforge.net/)
+	- A DOS floppy disk image
+	- A virtual floppy program (I use VFD: http://vfd.sourceforge.net/)
+	- A Hex editor
+	
+1. Compile all the source with FASM.
+2. Use Bochs to create a 20 MB flat hard disk image.
+3. Boot the DOS floppy on Bochs, using FDISK and FORMAT to
+format all the hard disk image with a FAT16 partition.
+4. Use the Hex editor to copy boot2.bin (boot loader) to the
+boot sector of FAT16 partition in hard disk image (boot sector
+location in hard disk image is 7E00h if you use Bochs default
+geometry when creating hard disk image)
+5. Mount the DOS floppy image using virtual floppy program,
+copy the rest of .bin files (loader.bin, 8259A.bin, VGA.bin,
+8042.bin, Sysutils.bin) to the floppy disk
+6. Run Bochs, boot the DOS floppy (be sure that you have unmounted
+the floppy image), copy all the *.bin to C:\
+7. Reset Bochs and choose booting from hard disk to test
+
+It run fine on Bochs. I didn't test it on real machine yet.
