@@ -13,6 +13,7 @@ Design goals:
   - Direct hardware access
   
 See doc/INSTALL.txt for install guide
+
 See Wiki for more infomation
 
 My references:
