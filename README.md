@@ -11,3 +11,6 @@ Design goals:
   - Single Address Space Environment
   - Direct hardware access
 
+My references:
+  - http://wiki.osdev.org ; An useful source for code examples and information
+
