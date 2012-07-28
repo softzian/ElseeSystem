@@ -9,9 +9,11 @@ I don't intend to write an OS, this project provide some basic modules in order 
 Design goals:
   - Support PC/AT Compatible System with IA-32 processor
   - Single Address Space Environment
+  - Modular system
   - Direct hardware access
   
 See doc/INSTALL.txt for install guide
+See Wiki for more infomation
 
 My references:
   - http://wiki.osdev.org ; An useful source for code examples and information
