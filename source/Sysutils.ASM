@@ -1,5 +1,5 @@
-; <PROGRAM NAME> - Utility Functions Module
-; Written in 2012 by <AUTHOR NAME> <AUTHOR E-MAIL ADDRESS>
+; Sysutils.asm - Utility Functions Module
+; Written in 2012 by Congdm
 ;
 ; To the extent possible under law, the author(s) have dedicated
 ; all copyright and related and neighboring rights to this software
@@ -10,8 +10,8 @@
 ; If not, see http://creativecommons.org/publicdomain/zero/1.0/
 
 use32
-include 'Header.inc'
-include 'errcode.inc'
+include 'include\Header.inc'
+include 'include\errcode.inc'
 
 ISysUtils = $100A00
 ; Function 1: Byte_to_HexStr (Num : Byte; var HexStr : Array of Char)

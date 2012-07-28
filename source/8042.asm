@@ -1,5 +1,5 @@
-; <PROGRAM NAME> - IKeyboard 8042 Module
-; Written in 2012 by <AUTHOR NAME> <AUTHOR E-MAIL ADDRESS>
+; 8042.ASM - IKeyboard 8042 Module
+; Written in 2012 by Congdm
 ;
 ; To the extent possible under law, the author(s) have dedicated
 ; all copyright and related and neighboring rights to this software
@@ -9,7 +9,7 @@
 ; along with this software.
 ; If not, see http://creativecommons.org/publicdomain/zero/1.0/
 
-include 'Header.inc'
+include 'include\Header.inc'
 use32
 
 IKeyboard = $100400
