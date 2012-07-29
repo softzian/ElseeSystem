@@ -12,6 +12,8 @@ IKeyboard.Read = IKeyboard + 8
 IVideo = $100600
 IVideo.Write_Telex = IVideo + 4
 IVideo.Clear_Display = IVideo + 8
+IVideo.Set_Cursor = IVideo + 12
+IVideo.Get_Cursor = IVideo + 16
 
 ISysUtils = $100A00
 ISysUtils.Byte_to_HexStr = ISysUtils + 4

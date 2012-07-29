@@ -15,6 +15,8 @@ use32
 IVideo = $100600
 ; Function 1: Write_Telex (var Text : Array of Char; Count : Word)
 ; Function 2: Clear_Display
+; Function 3: Set_Cursor (x, y : Byte)
+; Function 4: Get_Cursor (var x, var y : Byte)
 
 Function_Init:
 	push ebx
@@ -27,6 +29,10 @@ Function_Init:
 	lea eax, [ebx+Function_Write_Telex]
 	stosd
 	lea eax, [ebx+Function_Clear_Display]
+	stosd
+	lea eax, [ebx+Function_Set_Cursor]
+	stosd
+	lea eax, [ebx+Function_Get_Cursor]
 	stosd
 
 	xor eax, eax
@@ -107,6 +113,38 @@ Function_Clear_Display:
 	pop ecx
 	pop edi
 	ret
+
+Function_Set_Cursor:
+	.x equ byte [esp+5]
+	.y equ byte [esp+4]
+	mov al, .x
+	mov ah, .y
+	push ebx
+	mov ebx, [IVideo]
+	mov [ebx+Var.Cursor], ax
+	pop ebx
+	ret 2
+	restore .x
+	restore .y
+
+Function_Get_Cursor:
+	.x equ dword [esp+12]
+	.y equ dword [esp+8]
+
+	push ebx
+
+	mov ebx, [IVideo]
+	mov ax, [ebx+Var.Cursor]
+	mov ebx, .x
+	mov byte [ebx], al
+	mov ebx, .y
+	mov byte [ebx], ah
+
+	pop ebx
+	leave
+	ret 8
+	restore .x
+	restore .y
 
 Var:
 	.Cursor dw 0
