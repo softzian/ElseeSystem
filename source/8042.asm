@@ -156,15 +156,36 @@ Procedure_IRQ1:
 	mov si, ax
 
 	.Case_AL_of:
-		._F0:	cmp al, $F0
-			jne ._E0
-			bts word [ebx+Var.Flag], Release_bit
-			jmp .End_Case
-		._E0:	cmp al, $E0
-			jne .Else
-			bts word [ebx+Var.Flag], Escape_bit
-			jmp .End_Case
+		._F0:
+		cmp al, $F0
+		jne ._E0
+		bts word [ebx+Var.Flag], Release_bit
+		jmp .End_Case
+
+		._E0:
+		cmp al, $E0
+		jne ._Shift
+		bts word [ebx+Var.Flag], Escape_bit
+		jmp .End_Case
+
+		._Shift:
+		cmp al, $12
+		je @f
+		cmp al, $59
+		je @f
+		jne .Else
+		@@: btr word [ebx+Var.Flag], Release_bit
+		jc ._Release_Shift
+		._Hold_Shift:
+		bts word [ebx+Var.Flag], Shift_bit
+		jmp .End_Case
+		._Release_Shift:
+		btr word [ebx+Var.Flag], Shift_bit
+		jmp .End_Case
 	.Else:
+		; Special key with escape code is ignored for now
+		; Scancode after release code is ignored
+		; And if the Read_bit isn't set, the key will be ignored too
 		btr word [ebx+Var.Flag], Release_bit
 		setc ah
 		btr word [ebx+Var.Flag], Escape_bit
@@ -176,15 +197,25 @@ Procedure_IRQ1:
 		cmp ah, 1
 		je .End_Case
 
-		cmp al, $5A
+		cmp al, $5A	; Enter key scancode is $5A
 		je ._Stop_Reading
 
+		bt word [ebx+Var.Flag], Shift_bit
+		jc ._Use_Shift_Scancode
+
+		._Use_Normal_Scancode:
 		add ebx, Scancodes_Table
+		jmp ._Translate_Scancode
+
+		._Use_Shift_Scancode:
+		add ebx, Shift_Scancodes_Table
+
+		._Translate_Scancode:
 		xlatb
 		cmp al, 0
 		je .End_Case
 
-		sub ebx, Scancodes_Table
+		mov ebx, [IKeyboard]
 		mov edi, [ebx+Var.Buffer]
 		mov [edi], al
 
@@ -238,7 +269,7 @@ Scancodes_Table:
 	._B db $00 ; F6
 	._C db $00 ; F4
 	._D db $00 ; Tab
-	._E db $60 ; `
+	._E db '`' ; `
 	._F db $00
 
 	._10 db $00
@@ -323,6 +354,113 @@ Scancodes_Table:
 	._5B db ']' ; ]
 	._5C db $00
 	._5D db '\' ; \
+	._5E db $00
+	._5F db $00
+
+	repeat 160
+	db $00
+	end repeat
+
+Shift_Scancodes_Table:
+	._0 db $00
+	._1 db $00 ; F9
+	._2 db $00
+	._3 db $00 ; F5
+	._4 db $00 ; F3
+	._5 db $00 ; F1
+	._6 db $00 ; F2
+	._7 db $00 ; F12
+	._8 db $00
+	._9 db $00 ; F10
+	._A db $00 ; F8
+	._B db $00 ; F6
+	._C db $00 ; F4
+	._D db $00 ; Tab
+	._E db '~' ; `
+	._F db $00
+
+	._10 db $00
+	._11 db $00 ; Alt
+	._12 db $00 ; Shift
+	._13 db $00
+	._14 db $00 ; Ctrl
+	._15 db 'Q' ; q
+	._16 db '!' ; 1
+	._17 db $00
+	._18 db $00
+	._19 db $00
+	._1A db 'Z' ; z
+	._1B db 'S' ; s
+	._1C db 'A' ; a
+	._1D db 'W' ; w
+	._1E db '@' ; 2
+	._1F db $00
+
+	._20 db $00
+	._21 db 'C' ; c
+	._22 db 'X' ; x
+	._23 db 'D' ; d
+	._24 db 'E' ; e
+	._25 db '$' ; 4
+	._26 db '#' ; 3
+	._27 db $00
+	._28 db $00
+	._29 db ' ' ; Space
+	._2A db 'V' ; v
+	._2B db 'F' ; f
+	._2C db 'T' ; t
+	._2D db 'R' ; r
+	._2E db '%' ; 5
+	._2F db $00
+
+	._30 db $00
+	._31 db 'N' ; n
+	._32 db 'B' ; b
+	._33 db 'H' ; h
+	._34 db 'G' ; g
+	._35 db 'Y' ; y
+	._36 db '^' ; 6
+	._37 db $00
+	._38 db $00
+	._39 db $00
+	._3A db 'M' ; m
+	._3B db 'J' ; j
+	._3C db 'U' ; u
+	._3D db '&' ; 7
+	._3E db '*' ; 8
+	._3F db $00
+
+	._40 db $00
+	._41 db '<' ; ,
+	._42 db 'K' ; k
+	._43 db 'I' ; i
+	._44 db 'O' ; o
+	._45 db ')' ; 0
+	._46 db '(' ; 9
+	._47 db $00
+	._48 db $00
+	._49 db '>' ; .
+	._4A db '?' ; /
+	._4B db 'L' ; l
+	._4C db ':' ; ;
+	._4D db 'P' ; p
+	._4E db '_' ; -
+	._4F db $00
+
+	._50 db $00
+	._51 db $00
+	._52 db '"' ; '
+	._53 db $00
+	._54 db '{' ; [
+	._55 db '+' ; =
+	._56 db $00
+	._57 db $00
+	._58 db $00
+	._59 db $00 ; Right Shift
+	._5A db $00 ; Enter
+	._5B db '}' ; ]
+	._5C db $00
+	._5D db '|' ; \
 	._5E db $00
 	._5F db $00
 
