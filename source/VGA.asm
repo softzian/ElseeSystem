@@ -86,6 +86,7 @@ Function_Write_Telex:
 	pop edi
 	pop esi
 	pop edx
+	pop ecx
 	pop ebx
 	leave
 	ret 6

@@ -51,14 +51,26 @@ Begin:
 
 	call dword [IVideo.Clear_Display]
 
-	push Var.Text+1
+	push Var.Text+2
 	sub esp, 2
-	xor eax, eax
-	mov al, [Var.Text]
+	mov ax, word [Var.Text]
+	mov [esp], ax
+	call dword [IVideo.Write_Telex]
+
+	push Var.Buff+2
+	sub esp, 2
+	mov word [esp], 255
+	push Var.Buff
+	call dword [IKeyboard.Read]
+
+	push Var.Buff+2
+	sub esp, 2
+	mov ax, word [Var.Buff]
 	mov [esp], ax
 	call dword [IVideo.Write_Telex]
 
 	.loop:
+	hlt
 	jmp .loop
 
 Function_Load_Module:
@@ -328,13 +340,13 @@ GDT_Desc:
 
 Var:
 	.Filename db 'LOADER  ASM'
-	.Text db 24,'A little string to test '
+	.Text db 14,0,'Input string: '
+	.Buff db 0,0, 255 dup 0
+
 	.IInterrupt_Modulename db '8259A   BIN'
 	.IVideo_Modulename db 'VGA     BIN'
 	.IKeyboard_Modulename db '8042    BIN'
 	.ISysUtils_Modulename db 'SYSUTILSBIN'
-	CursorX db 0
-	CursorY db 0
 
 enable_A20:
 	call .a20wait

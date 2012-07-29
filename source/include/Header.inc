@@ -5,6 +5,10 @@ IInterrupt.Mask_all_IRQ = IInterrupt + 12
 IInterrupt.Enable_IRQ = IInterrupt + 16
 IInterrupt.Send_EOI = IInterrupt + 20
 
+IKeyboard = $100400
+IKeyboard.Init_Keyboard = IKeyboard + 4
+IKeyboard.Read = IKeyboard + 8
+
 IVideo = $100600
 IVideo.Write_Telex = IVideo + 4
 IVideo.Clear_Display = IVideo + 8
