@@ -231,6 +231,7 @@ Procedure_IRQ1:
 
 		._Stop_Reading:
 		btr word [ebx+Var.Flag], Read_bit
+		call dword [IVideo.New_Line]
 	.End_Case:
 
 	jmp .loop1

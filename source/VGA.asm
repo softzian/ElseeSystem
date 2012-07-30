@@ -17,6 +17,7 @@ IVideo = $100600
 ; Function 2: Clear_Display
 ; Function 3: Set_Cursor (x, y : Byte)
 ; Function 4: Get_Cursor (var x, var y : Byte)
+; Function 5: New_Line
 
 Function_Init:
 	push ebx
@@ -33,6 +34,8 @@ Function_Init:
 	lea eax, [ebx+Function_Set_Cursor]
 	stosd
 	lea eax, [ebx+Function_Get_Cursor]
+	stosd
+	lea eax, [ebx+Function_New_Line]
 	stosd
 
 	xor eax, eax
@@ -88,6 +91,9 @@ Function_Write_Telex:
 	add [ebx+Var.Cursor], ax
 	xor eax, eax
 
+	.Set_Flag:
+	bts word [ebx+Var.Flag], Write_Flag
+
 	.Return:
 	pop edi
 	pop esi
@@ -104,14 +110,23 @@ Function_Write_Telex:
 	restore .Text
 
 Function_Clear_Display:
+	push ebx
 	push edi
 	push ecx
+
+	.Clear_Screen:
 	xor eax, eax
 	mov edi, $B8000
 	mov ecx, 1000
 	rep stosd
+
+	.Clear_Flag:
+	mov ebx, [IVideo]
+	mov word [ebx+Var.Flag], 0
+
 	pop ecx
 	pop edi
+	pop ebx
 	ret
 
 Function_Set_Cursor:
@@ -122,6 +137,7 @@ Function_Set_Cursor:
 	push ebx
 	mov ebx, [IVideo]
 	mov [ebx+Var.Cursor], ax
+	btr word [ebx+Var.Flag], Write_Flag
 	pop ebx
 	ret 2
 	restore .x
@@ -146,5 +162,36 @@ Function_Get_Cursor:
 	restore .x
 	restore .y
 
+Function_New_Line:
+	push ebx
+
+	mov ebx, [IVideo]
+
+	mov ax, [ebx+Var.Cursor]
+	mov bl, 80
+	div bl
+
+	mov ebx, [IVideo]
+	cmp ah, 0
+	jne .j1
+
+	bt word [ebx+Var.Flag], Write_Flag
+	jc .Return
+
+	.j1:
+	neg ah
+	add ah, 80
+	shr ax, 8
+	add [ebx+Var.Cursor], ax
+
+	.Return:
+	btr word [ebx+Var.Flag], Write_Flag
+	pop ebx
+	ret
+
+Const:
+	Write_Flag = 0
+
 Var:
 	.Cursor dw 0
+	.Flag dw 0

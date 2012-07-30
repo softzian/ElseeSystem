@@ -17,6 +17,7 @@ ISysUtils = $100A00
 ; Function 1: Byte_to_HexStr (Num : Byte; var HexStr : Array of Char)
 ; Function 2: Write_Byte (Value : Byte; Format : Byte)
 ; Function 3: Write_Char (Value : Char)
+; Function 4: Write_String (var Str : String)
 
 Function_Init:
 	push ebx
