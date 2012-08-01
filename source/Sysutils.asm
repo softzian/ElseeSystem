@@ -18,6 +18,10 @@ ISysUtils = $100A00
 ; Function 2: Write_Byte (Value : Byte; Format : Byte)
 ; Function 3: Write_Char (Value : Char)
 ; Function 4: Write_String (var Str : String)
+; Function 5: Create_Ring_Buffer (var Buffer : Array; Count : LongWord)
+; Function 6: Ring_Buffer_Read (var Buffer : Array; var Out : Byte)
+; Function 7: Ring_Buffer_Write (var Buffer : Array; In : Byte)
+; Function 8: Clear_Ring_Buffer (var Buffer : Array)
 
 Function_Init:
 	push ebx
@@ -32,6 +36,16 @@ Function_Init:
 	lea eax, [ebx+Function_Write_Byte]
 	stosd
 	lea eax, [ebx+Function_Write_Char]
+	stosd
+	lea eax, [ebx+Function_Write_String]
+	stosd
+	lea eax, [ebx+Function_Create_Ring_Buffer]
+	stosd
+	lea eax, [ebx+Function_Ring_Buffer_Read]
+	stosd
+	lea eax, [ebx+Function_Ring_Buffer_Write]
+	stosd
+	lea eax, [ebx+Function_Clear_Ring_Buffer]
 	stosd
 
 	xor eax, eax
@@ -124,3 +138,114 @@ Function_Write_Char:
 	call dword [IVideo.Write_Telex]
 	ret 1
 	restore .Value
+
+Function_Write_String:
+
+Function_Create_Ring_Buffer:
+	.Buffer equ dword [esp+12]
+	.Count equ dword [esp+8]
+
+	push ebx
+
+	cmp .Count, 0
+	je .Error1
+
+	mov ebx, .Buffer
+	mov eax, .Count
+	add eax, 12
+	mov [ebx+4], eax
+	mov [ebx+8], eax
+	add eax, ebx
+	mov [ebx], eax
+
+	xor eax, eax
+
+	.Return:
+	pop ebx
+	ret 8
+	.Error1:
+	mov eax, INVALID_COUNT
+	jmp .Return
+	restore .Buffer
+	restore .Count
+
+Function_Ring_Buffer_Read:
+	.Buffer equ dword [esp+12]
+	.Out equ dword [esp+8]
+
+	push ebx
+
+	mov ebx, .Buffer
+	mov eax, [ebx+4]
+
+	cmp eax, [ebx+8]
+	je .Buffer_Empty
+
+	inc eax
+	cmp eax, [ebx]
+	jna .j1
+
+	lea eax, [ebx+12]
+
+	.j1: mov [ebx+4], eax
+	mov bl, [eax]
+	mov eax, .Out
+	mov [eax], bl
+
+	xor eax, eax
+
+	.Return:
+	pop ebx
+	ret 8
+	.Buffer_Empty:
+	mov eax, BUFFER_EMPTY
+	jmp .Return
+	restore .Buffer
+	restore .Out
+
+Function_Ring_Buffer_Write:
+	.Buffer equ dword [esp+9]
+	.In equ byte [esp+8]
+
+	push ebx
+
+	mov ebx, .Buffer
+	mov eax, [ebx+8]
+
+	inc eax
+	cmp eax, [ebx]
+	jna .j1
+
+	lea eax, [ebx+12]
+
+	.j1:
+	cmp eax, [ebx+4]
+	jne .j2
+
+	inc eax
+	cmp eax, [ebx]
+	jna .j2
+
+	lea eax, [ebx+12]
+
+	.j2:
+	mov [ebx+8], eax
+	mov bl, .In
+	mov [eax], bl
+
+	xor eax, eax
+
+	.Return:
+	pop ebx
+	ret 5
+	restore .Buffer
+	restore .Out
+
+Function_Clear_Ring_Buffer:
+	.Buffer equ dword [esp+8]
+	push ebx
+	mov ebx, .Buffer
+	mov eax, [ebx+8]
+	mov [ebx+4], eax
+	pop ebx
+	ret 4

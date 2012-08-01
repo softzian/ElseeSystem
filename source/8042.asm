@@ -16,6 +16,7 @@ use32
 IKeyboard = $100400
 ; Function 1: Init_Keyboard
 ; Function 2: Read (var Buffer : Array of Char; Count : Word; var NumberOfCharsRead : Word)
+; Function 3: Clear_Keyboard_Buffer
 
 Function_Init:
 	push ebx
@@ -30,9 +31,9 @@ Function_Init:
 	lea eax, [ebx+Function_Read]
 	stosd
 
-	call Function_Init_Keyboard
-
 	cli
+
+	call Function_Init_Keyboard
 
 	dec esp
 	mov byte [esp], $21
@@ -45,6 +46,11 @@ Function_Init:
 	call dword [IInterrupt.Enable_IRQ]
 
 	sti
+
+	lea eax, [ebx+Keyboard_Buffer]
+	push eax
+	push 1024
+	call dword [ISysUtils.Create_Ring_Buffer]
 
 	xor eax, eax
 	pop edi
@@ -103,32 +109,79 @@ Function_Read:
 	.Count equ word [ebp+12]
 	.NumberOfCharsRead equ dword [ebp+8]
 
-	enter 0, 0
+	.Scancode equ byte [ebp-1]
+
+	push ebp
+	mov ebp, esp
+	dec esp
 	push ebx
 	push ecx
+	push edx
+	push edi
 
+	xor ecx, ecx
 	mov ebx, [IKeyboard]
+	mov edi, .Buffer
 	mov cx, .Count
-	mov eax, .Buffer
 
-	cmp cx, 0
-	je .Error1
+	test ecx, ecx	; Check .Count before continue
+	jz .Error1
 
-	mov [ebx+Var.Buffer], eax
-	mov [ebx+Var.Count], cx
+	xor edx, edx
 
-	bts [ebx+Var.Flag], Read_bit
 	.Loop_until_finish_Reading:
-	hlt
-	bt [ebx+Var.Flag], Read_bit
-	jc .Loop_until_finish_Reading
+	lea eax, [ebx+Keyboard_Buffer]
+	push eax
+	lea eax, .Scancode
+	push eax
+	call dword [ISysUtils.Ring_Buffer_Read]
 
-	sub cx, [ebx+Var.Count]
+	test eax, eax
+	jnz .Wait_for_IRQ
+
+	mov al, .Scancode	; If Enter is press then Exit loop
+	cmp al, $5A
+	je .Finish
+
+	call Function_Handle_Scancode
+	test al, al
+	jz .Loop_until_finish_Reading
+
+	test ecx, ecx
+	jz .No_more_buffer_space_to_put_characters_on
+
+	; Store character to .Buffer
+	mov [edi], al
+	dec ecx
+	inc edi
+
+	; Print character to display
+	mov [esp-1], al
+	dec esp
+	call dword [ISysUtils.Write_Char]
+
+	jmp .Loop_until_finish_Reading
+
+	.Wait_for_IRQ:
+	hlt
+	jmp .Loop_until_finish_Reading
+	.No_more_buffer_space_to_put_characters_on:
+	inc edx
+	jmp .Loop_until_finish_Reading
+
+	.Finish:
+	neg cx
 	mov ebx, .NumberOfCharsRead
+	add cx, .Count
 	mov [ebx], cx
+
+	test edx, edx
+	jnz .Buffer_too_small
 	xor eax, eax
 
 	.Return:
+	pop edi
+	pop edx
 	pop ecx
 	pop ebx
 	leave
@@ -136,10 +189,77 @@ Function_Read:
 	.Error1:
 	mov eax, INVALID_COUNT
 	jmp .Return
+	.Buffer_too_small:
+	mov eax, BUFFER_NOT_LARGE_ENOUGH
+	jmp .Return
 
 	restore .Buffer
 	restore .Count
 	restore .NumberOfCharsRead
+
+Function_Handle_Scancode:
+	.Case_AL_of:
+		._F0:
+		cmp al, $F0
+		jne ._E0
+		bts word [ebx+Var.Flag], Release_bit
+		jmp .End_Case_Do_Nothing
+
+		._E0:
+		cmp al, $E0
+		jne ._Shift
+		bts word [ebx+Var.Flag], Escape_bit
+		jmp .End_Case_Do_Nothing
+
+		._Shift:
+		cmp al, $12
+		je @f
+		cmp al, $59
+		je @f
+		jne .Else
+		@@: btr word [ebx+Var.Flag], Release_bit
+		jc ._Release_Shift
+		._Hold_Shift:
+		bts word [ebx+Var.Flag], Shift_bit
+		jmp .End_Case_Do_Nothing
+		._Release_Shift:
+		btr word [ebx+Var.Flag], Shift_bit
+		jmp .End_Case_Do_Nothing
+	.Else:
+		; Special key with escape code is ignored for now
+		; Scancode after release code is ignored
+		btr word [ebx+Var.Flag], Release_bit
+		setc ah
+		btr word [ebx+Var.Flag], Escape_bit
+		setc bl
+		or ah, bl
+		cmp ah, 1
+		je .End_Case_Do_Nothing
+
+		cmp al, $5A	; Enter key scancode is $5A
+		je .End_Case
+
+		mov ebx, [IKeyboard]
+		bt word [ebx+Var.Flag], Shift_bit
+		jc ._Use_Shift_Scancode
+
+		._Use_Normal_Scancode:
+		add ebx, Scancodes_Table
+		jmp ._Translate_Scancode
+
+		._Use_Shift_Scancode:
+		add ebx, Shift_Scancodes_Table
+
+		._Translate_Scancode:
+		xlatb
+	.End_Case:
+	mov ebx, [IKeyboard]
+	ret
+	.End_Case_Do_Nothing:
+	mov ebx, [IKeyboard]
+	xor eax, eax
+	ret
+
 
 Procedure_IRQ1:
 	pusha
@@ -153,86 +273,11 @@ Procedure_IRQ1:
 	jz .out1
 	in al, $60
 
-	mov si, ax
-
-	.Case_AL_of:
-		._F0:
-		cmp al, $F0
-		jne ._E0
-		bts word [ebx+Var.Flag], Release_bit
-		jmp .End_Case
-
-		._E0:
-		cmp al, $E0
-		jne ._Shift
-		bts word [ebx+Var.Flag], Escape_bit
-		jmp .End_Case
-
-		._Shift:
-		cmp al, $12
-		je @f
-		cmp al, $59
-		je @f
-		jne .Else
-		@@: btr word [ebx+Var.Flag], Release_bit
-		jc ._Release_Shift
-		._Hold_Shift:
-		bts word [ebx+Var.Flag], Shift_bit
-		jmp .End_Case
-		._Release_Shift:
-		btr word [ebx+Var.Flag], Shift_bit
-		jmp .End_Case
-	.Else:
-		; Special key with escape code is ignored for now
-		; Scancode after release code is ignored
-		; And if the Read_bit isn't set, the key will be ignored too
-		btr word [ebx+Var.Flag], Release_bit
-		setc ah
-		btr word [ebx+Var.Flag], Escape_bit
-		setc dl
-		or ah, dl
-		bt word [ebx+Var.Flag], Read_bit
-		setnc dl
-		or ah, dl
-		cmp ah, 1
-		je .End_Case
-
-		cmp al, $5A	; Enter key scancode is $5A
-		je ._Stop_Reading
-
-		bt word [ebx+Var.Flag], Shift_bit
-		jc ._Use_Shift_Scancode
-
-		._Use_Normal_Scancode:
-		add ebx, Scancodes_Table
-		jmp ._Translate_Scancode
-
-		._Use_Shift_Scancode:
-		add ebx, Shift_Scancodes_Table
-
-		._Translate_Scancode:
-		xlatb
-		cmp al, 0
-		je .End_Case
-
-		mov ebx, [IKeyboard]
-		mov edi, [ebx+Var.Buffer]
-		mov [edi], al
-
-		dec esp
-		mov [esp], al
-		call dword [ISysUtils.Write_Char]
-
-		dec word [ebx+Var.Count]
-		cmp word [ebx+Var.Count], 0
-		je ._Stop_Reading
-		inc dword [ebx+Var.Buffer]
-		jmp .End_Case
-
-		._Stop_Reading:
-		btr word [ebx+Var.Flag], Read_bit
-		call dword [IVideo.New_Line]
-	.End_Case:
+	lea ecx, [ebx+Keyboard_Buffer]
+	push ecx
+	dec esp
+	mov [esp], al
+	call dword [ISysUtils.Ring_Buffer_Write]
 
 	jmp .loop1
 
@@ -248,12 +293,10 @@ Const:
 	Release_bit = 0
 	Shift_bit = 1
 	Escape_bit = 2
-	Read_bit = 3
 
 Var:
 	.Flag dw 0
-	.Buffer dd $FFFFFFFF
-	.Count dw 0
+	Keyboard_Buffer db (1024+13) dup 0
 
 Scancodes_Table:
 	._0 db $00

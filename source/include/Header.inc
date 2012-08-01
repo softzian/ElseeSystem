@@ -20,5 +20,10 @@ ISysUtils = $100A00
 ISysUtils.Byte_to_HexStr = ISysUtils + 4
 ISysUtils.Write_Byte = ISysUtils + 8
 ISysUtils.Write_Char = ISysUtils + 12
+ISysUtils.Write_String = ISysUtils + 16
+ISysUtils.Create_Ring_Buffer = ISysUtils + 20
+ISysUtils.Ring_Buffer_Read = ISysUtils + 24
+ISysUtils.Ring_Buffer_Write = ISysUtils + 28
+ISysUtils.Clear_Ring_Buffer = ISysUtils + 32
 
 Format_Hex = 1

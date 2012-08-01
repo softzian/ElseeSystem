@@ -38,15 +38,15 @@ Begin:
 	sti
 
 	push $201000
-	push Var.IVideo_Modulename
+	push Var.ISysUtils_Modulename
 	call Function_Load_Module
 
 	push $202000
-	push Var.IKeyboard_Modulename
+	push Var.IVideo_Modulename
 	call Function_Load_Module
 
 	push $203000
-	push Var.ISysUtils_Modulename
+	push Var.IKeyboard_Modulename
 	call Function_Load_Module
 
 	call dword [IVideo.Clear_Display]
