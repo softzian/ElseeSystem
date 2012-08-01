@@ -8,6 +8,7 @@ IInterrupt.Send_EOI = IInterrupt + 20
 IKeyboard = $100400
 IKeyboard.Init_Keyboard = IKeyboard + 4
 IKeyboard.Read = IKeyboard + 8
+IKeyboard.Clear_Keyboard_Buffer = IKeyboard + 12
 
 IVideo = $100600
 IVideo.Write_Telex = IVideo + 4
@@ -25,5 +26,7 @@ ISysUtils.Create_Ring_Buffer = ISysUtils + 20
 ISysUtils.Ring_Buffer_Read = ISysUtils + 24
 ISysUtils.Ring_Buffer_Write = ISysUtils + 28
 ISysUtils.Clear_Ring_Buffer = ISysUtils + 32
+ISysUtils.Read_String = ISysUtils + 36
+ISysUtils.Read_Char = ISysUtils + 40
 
 Format_Hex = 1

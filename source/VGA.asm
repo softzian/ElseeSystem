@@ -26,17 +26,17 @@ Function_Init:
 	cld
 	mov ebx, eax
 	mov edi, IVideo
-	stosd
+	mov [edi], eax
 	lea eax, [ebx+Function_Write_Telex]
-	stosd
+	mov [edi+4], eax
 	lea eax, [ebx+Function_Clear_Display]
-	stosd
+	mov [edi+8], eax
 	lea eax, [ebx+Function_Set_Cursor]
-	stosd
+	mov [edi+12], eax
 	lea eax, [ebx+Function_Get_Cursor]
-	stosd
+	mov [edi+16], eax
 	lea eax, [ebx+Function_New_Line]
-	stosd
+	mov [edi+20], eax
 
 	xor eax, eax
 	pop edi
@@ -80,8 +80,8 @@ Function_Write_Telex:
 	mov cx, .Count
 	.Copy_Text_to_Video_mem:
 	mov al, [esi]
-	mov [edi], al
 	mov byte [edi+1], 00001111b
+	mov [edi], al
 	inc esi
 	add edi, 2
 	loop .Copy_Text_to_Video_mem
@@ -182,7 +182,12 @@ Function_New_Line:
 	neg ah
 	add ah, 80
 	shr ax, 8
-	add [ebx+Var.Cursor], ax
+	add ax, [ebx+Var.Cursor]
+
+	cmp ax, 4000
+	jb .j2
+	xor ax, ax
+	.j2: mov [ebx+Var.Cursor], ax
 
 	.Return:
 	btr word [ebx+Var.Flag], Write_Flag

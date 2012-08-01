@@ -51,26 +51,41 @@ Begin:
 
 	call dword [IVideo.Clear_Display]
 
-	push Var.Text+2
-	sub esp, 2
-	mov ax, word [Var.Text]
-	mov [esp], ax
-	call dword [IVideo.Write_Telex]
-
-	push Var.Buff+2
-	sub esp, 2
-	mov word [esp], 255
-	push Var.Buff
-	call dword [IKeyboard.Read]
-
-	push Var.Buff+2
-	sub esp, 2
-	mov ax, word [Var.Buff]
-	mov [esp], ax
-	call dword [IVideo.Write_Telex]
-
 	.loop:
-	hlt
+	push Var.Text
+	call dword [ISysUtils.Write_String]
+
+	push Var.Str
+	mov word [esp-2], 255
+	sub esp, 2
+	call dword [ISysUtils.Read_String]
+
+	push Var.Text2
+	call dword [ISysUtils.Write_String]
+
+	push Var.Str
+	call dword [ISysUtils.Write_String]
+
+	call dword [IVideo.New_Line]
+	call dword [IVideo.New_Line]
+
+	push Var.Text3
+	call dword [ISysUtils.Write_String]
+
+	push Var.Ch
+	call dword [ISysUtils.Read_Char]
+
+	push Var.Text4
+	call dword [ISysUtils.Write_String]
+
+	mov al, [Var.Ch]
+	mov [esp-1], al
+	dec esp
+	call dword [ISysUtils.Write_Char]
+
+	call dword [IVideo.New_Line]
+	call dword [IVideo.New_Line]
+
 	jmp .loop
 
 Function_Load_Module:
@@ -341,7 +356,11 @@ GDT_Desc:
 Var:
 	.Filename db 'LOADER  ASM'
 	.Text db 14,0,'Input string: '
-	.Buff db 0,0, 255 dup 0
+	.Text2 db 15,0,'Output string: '
+	.Text3 db 12,0,'Input char: '
+	.Text4 db 13,0,'Output char: '
+	.Str db 0,0, 255 dup 0
+	.Ch db 0
 
 	.IInterrupt_Modulename db '8259A   BIN'
 	.IVideo_Modulename db 'VGA     BIN'

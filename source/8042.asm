@@ -24,12 +24,13 @@ Function_Init:
 
 	mov ebx, eax
 	mov edi, IKeyboard
-	cld
-	stosd
+	mov [edi], eax
 	lea eax, [ebx+Function_Init_Keyboard]
-	stosd
+	mov [edi+4], eax
 	lea eax, [ebx+Function_Read]
-	stosd
+	mov [edi+8], eax
+	lea eax, [ebx+Function_Read]
+	mov [edi+12], eax
 
 	cli
 
@@ -139,23 +140,23 @@ Function_Read:
 	test eax, eax
 	jnz .Wait_for_IRQ
 
-	mov al, .Scancode	; If Enter is press then Exit loop
+	mov al, .Scancode
+	call Function_Handle_Scancode
+
+	; If Enter is press then Exit loop
 	cmp al, $5A
 	je .Finish
 
-	call Function_Handle_Scancode
 	test al, al
 	jz .Loop_until_finish_Reading
 
 	test ecx, ecx
 	jz .No_more_buffer_space_to_put_characters_on
 
-	; Store character to .Buffer
 	mov [edi], al
 	dec ecx
 	inc edi
 
-	; Print character to display
 	mov [esp-1], al
 	dec esp
 	call dword [ISysUtils.Write_Char]
@@ -170,6 +171,8 @@ Function_Read:
 	jmp .Loop_until_finish_Reading
 
 	.Finish:
+	call dword [IVideo.New_Line]
+
 	neg cx
 	mov ebx, .NumberOfCharsRead
 	add cx, .Count
@@ -260,6 +263,13 @@ Function_Handle_Scancode:
 	xor eax, eax
 	ret
 
+Function_Clear_Keyboard_Buffer:
+	push ebx
+	mov ebx, [IKeyboard]
+	lea eax, [ebx+Keyboard_Buffer]
+	call dword [ISysUtils.Clear_Ring_Buffer]
+	pop ebx
+	ret
 
 Procedure_IRQ1:
 	pusha

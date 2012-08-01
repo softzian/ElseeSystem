@@ -18,10 +18,12 @@ ISysUtils = $100A00
 ; Function 2: Write_Byte (Value : Byte; Format : Byte)
 ; Function 3: Write_Char (Value : Char)
 ; Function 4: Write_String (var Str : String)
-; Function 5: Create_Ring_Buffer (var Buffer : Array; Count : LongWord)
-; Function 6: Ring_Buffer_Read (var Buffer : Array; var Out : Byte)
-; Function 7: Ring_Buffer_Write (var Buffer : Array; In : Byte)
-; Function 8: Clear_Ring_Buffer (var Buffer : Array)
+; Function 5: Create_Ring_Buffer (var Buffer : Ring_Buffer; Count : LongWord)
+; Function 6: Ring_Buffer_Read (var Buffer : Ring_Buffer; var Out : Byte)
+; Function 7: Ring_Buffer_Write (var Buffer : Ring_Buffer; In : Byte)
+; Function 8: Clear_Ring_Buffer (var Buffer : Ring_Buffer)
+; Function 9: Read_String (var Str : String; Count : Word)
+; Function 10: Read_Char (var Ch : Char)
 
 Function_Init:
 	push ebx
@@ -30,23 +32,27 @@ Function_Init:
 	cld
 	mov ebx, eax
 	mov edi, ISysUtils
-	stosd
+	mov [edi], eax
 	lea eax, [ebx+Function_Byte_to_HexStr]
-	stosd
+	mov [edi+4], eax
 	lea eax, [ebx+Function_Write_Byte]
-	stosd
+	mov [edi+8], eax
 	lea eax, [ebx+Function_Write_Char]
-	stosd
+	mov [edi+12], eax
 	lea eax, [ebx+Function_Write_String]
-	stosd
+	mov [edi+16], eax
 	lea eax, [ebx+Function_Create_Ring_Buffer]
-	stosd
+	mov [edi+20], eax
 	lea eax, [ebx+Function_Ring_Buffer_Read]
-	stosd
+	mov [edi+24], eax
 	lea eax, [ebx+Function_Ring_Buffer_Write]
-	stosd
+	mov [edi+28], eax
 	lea eax, [ebx+Function_Clear_Ring_Buffer]
-	stosd
+	mov [edi+32], eax
+	lea eax, [ebx+Function_Read_String]
+	mov [edi+36], eax
+	lea eax, [ebx+Function_Read_Char]
+	mov [edi+40], eax
 
 	xor eax, eax
 	pop edi
@@ -140,6 +146,19 @@ Function_Write_Char:
 	restore .Value
 
 Function_Write_String:
+	.Str equ dword [esp+8]
+	push ebx
+	mov ebx, .Str
+	mov eax, ebx
+	add ebx, 2
+	mov eax, [eax]
+	push ebx
+	mov [esp-2], ax
+	sub esp, 2
+	call dword [IVideo.Write_Telex]
+	pop ebx
+	ret 4
+	restore .Str
 
 Function_Create_Ring_Buffer:
 	.Buffer equ dword [esp+12]
@@ -243,9 +262,51 @@ Function_Ring_Buffer_Write:
 
 Function_Clear_Ring_Buffer:
 	.Buffer equ dword [esp+8]
+
 	push ebx
 	mov ebx, .Buffer
 	mov eax, [ebx+8]
 	mov [ebx+4], eax
+	pop ebx
+	ret 4
+
+Function_Read_String:
+	.Str equ dword [esp+10]
+	.Count equ word [esp+8]
+
+	push ebx
+	mov ebx, .Str
+	mov ax, .Count
+	add ebx, 2
+	mov [esp-6], ax
+	mov [esp-4], ebx
+	sub ebx, 2
+	mov [esp-10], ebx
+	sub esp, 10
+	call dword [IKeyboard.Read]
+	pop ebx
+	ret 6
+
+Function_Read_Char:
+	.Ch equ dword [esp+8]
+	push ebx
+
+	mov ebx, .Ch
+	mov [esp-6], ebx
+	lea eax, [esp-2]
+	mov word [esp-8], 1
+	mov [esp-12], eax
+	sub esp, 12
+	call dword [IKeyboard.Read]
+
+	cmp word [esp], 0
+	je .Set_Result_to_Nul
+	jne .Return
+
+	.Set_Result_to_Nul:
+	mov byte [ebx], 0
+
+	.Return:
+	add esp, 2
 	pop ebx
 	ret 4
