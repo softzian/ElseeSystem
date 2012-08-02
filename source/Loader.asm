@@ -38,7 +38,7 @@ Begin:
 	sti
 
 	push $201000
-	push Var.ISysUtils_Modulename
+	push Var.IUtility_Modulename
 	call Function_Load_Module
 
 	push $202000
@@ -52,40 +52,24 @@ Begin:
 	call dword [IVideo.Clear_Display]
 
 	.loop:
-	push Var.Text
-	call dword [ISysUtils.Write_String]
+	push Var.Text5
+	call dword [IUtility.Write_String1]
 
 	push Var.Str
-	mov word [esp-2], 255
+	mov [esp-2], word 255
 	sub esp, 2
-	call dword [ISysUtils.Read_String]
+	call dword [IUtility.Read_String1]
 
-	push Var.Text2
-	call dword [ISysUtils.Write_String]
-
+	push Var.Num
 	push Var.Str
-	call dword [ISysUtils.Write_String]
-
-	call dword [IVideo.New_Line]
-	call dword [IVideo.New_Line]
-
-	push Var.Text3
-	call dword [ISysUtils.Write_String]
-
-	push Var.Ch
-	call dword [ISysUtils.Read_Char]
-
-	push Var.Text4
-	call dword [ISysUtils.Write_String]
-
-	mov al, [Var.Ch]
-	mov [esp-1], al
+	mov [esp-1], byte 4
 	dec esp
-	call dword [ISysUtils.Write_Char]
+	call dword [IUtility.HexStr1_to_Unsigned]
+
+	push [Var.Num]
+	call dword [IUtility.Write_Unsigned_Hex]
 
 	call dword [IVideo.New_Line]
-	call dword [IVideo.New_Line]
-
 	jmp .loop
 
 Function_Load_Module:
@@ -359,13 +343,16 @@ Var:
 	.Text2 db 15,0,'Output string: '
 	.Text3 db 12,0,'Input char: '
 	.Text4 db 13,0,'Output char: '
+	.Text5 db 20,0,'Input a hex number: '
+	.Text6 db 22,0,'What it is in memory: '
 	.Str db 0,0, 255 dup 0
 	.Ch db 0
+	.Num dd 0
 
 	.IInterrupt_Modulename db '8259A   BIN'
 	.IVideo_Modulename db 'VGA     BIN'
 	.IKeyboard_Modulename db '8042    BIN'
-	.ISysUtils_Modulename db 'SYSUTILSBIN'
+	.IUtility_Modulename db 'UTILITY BIN'
 
 enable_A20:
 	call .a20wait

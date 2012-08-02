@@ -51,7 +51,7 @@ Function_Init:
 	lea eax, [ebx+Keyboard_Buffer]
 	push eax
 	push 1024
-	call dword [ISysUtils.Create_Ring_Buffer]
+	call dword [IUtility.Create_Ring_Buffer]
 
 	xor eax, eax
 	pop edi
@@ -135,7 +135,7 @@ Function_Read:
 	push eax
 	lea eax, .Scancode
 	push eax
-	call dword [ISysUtils.Ring_Buffer_Read]
+	call dword [IUtility.Ring_Buffer_Read]
 
 	test eax, eax
 	jnz .Wait_for_IRQ
@@ -159,7 +159,7 @@ Function_Read:
 
 	mov [esp-1], al
 	dec esp
-	call dword [ISysUtils.Write_Char]
+	call dword [IUtility.Write_Char]
 
 	jmp .Loop_until_finish_Reading
 
@@ -267,7 +267,7 @@ Function_Clear_Keyboard_Buffer:
 	push ebx
 	mov ebx, [IKeyboard]
 	lea eax, [ebx+Keyboard_Buffer]
-	call dword [ISysUtils.Clear_Ring_Buffer]
+	call dword [IUtility.Clear_Ring_Buffer]
 	pop ebx
 	ret
 
@@ -287,7 +287,7 @@ Procedure_IRQ1:
 	push ecx
 	dec esp
 	mov [esp], al
-	call dword [ISysUtils.Ring_Buffer_Write]
+	call dword [IUtility.Ring_Buffer_Write]
 
 	jmp .loop1
 
