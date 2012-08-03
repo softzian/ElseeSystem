@@ -4,7 +4,7 @@ Note: The main reason I put this on GitHub is for backup purpose
 
 A Simple Hobby x86 "OS" for learning purpose
 
-It isn't OS yet, for now this project only provide some basic modules in order to develop programs that run without OS (run directly on hardware). It will evolve to an OS later.
+It isn't an OS yet and for now, this project only provide some basic modules in order to develop programs that run without OS (run directly on hardware). It will evolve to an OS later.
 
 Design goals:
   - Support PC/AT Compatible System with IA-32 processor
