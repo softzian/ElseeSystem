@@ -16,6 +16,7 @@ use32
 IKeyboard = $100400
 ; Function 1: Init_Keyboard
 ; Function 2: Read (var Buffer : Array of Char; Count : Word; var NumberOfCharsRead : Word)
+; Function 2: Read_Keyboard_Buffer (var Ch : Char)
 ; Function 3: Clear_Keyboard_Buffer
 
 Function_Init:
@@ -27,9 +28,9 @@ Function_Init:
 	mov [edi], eax
 	lea eax, [ebx+Function_Init_Keyboard]
 	mov [edi+4], eax
-	lea eax, [ebx+Function_Read]
+	lea eax, [ebx+Function_Read_Keyboard_Buffer]
 	mov [edi+8], eax
-	lea eax, [ebx+Function_Read]
+	lea eax, [ebx+Function_Clear_Keyboard_Buffer]
 	mov [edi+12], eax
 
 	cli
@@ -51,7 +52,7 @@ Function_Init:
 	lea eax, [ebx+Keyboard_Buffer]
 	push eax
 	push 1024
-	call dword [IUtility.Create_Ring_Buffer]
+	call Function_Create_Ring_Buffer
 
 	xor eax, eax
 	pop edi
@@ -105,102 +106,37 @@ Function_Init_Keyboard:
 	mov eax, -1
 	ret
 
-Function_Read:
-	.Buffer equ dword [ebp+14]
-	.Count equ word [ebp+12]
-	.NumberOfCharsRead equ dword [ebp+8]
-
-	.Scancode equ byte [ebp-1]
+Function_Read_Keyboard_Buffer:	; Function 3
+	.Ch equ dword [ebp+8]	; var Ch : Char
 
 	push ebp
 	mov ebp, esp
-	dec esp
 	push ebx
-	push ecx
-	push edx
-	push edi
 
-	xor ecx, ecx
 	mov ebx, [IKeyboard]
-	mov edi, .Buffer
-	mov cx, .Count
+	add ebx, Keyboard_Buffer
+	call Function_Ring_Buffer_Read
 
-	test ecx, ecx	; Check .Count before continue
-	jz .Error1
+	test ah, ah
+	jnz .Buffer_is_empty
 
-	xor edx, edx
+	mov ebx, [IKeyboard]
+	call Function_Translate_Scancode
 
-	.Loop_until_finish_Reading:
-	lea eax, [ebx+Keyboard_Buffer]
-	push eax
-	lea eax, .Scancode
-	push eax
-	call dword [IUtility.Ring_Buffer_Read]
-
-	test eax, eax
-	jnz .Wait_for_IRQ
-
-	mov al, .Scancode
-	call Function_Handle_Scancode
-
-	; If Enter is press then Exit loop
-	cmp al, $5A
-	je .Finish
-
-	test al, al
-	jz .Loop_until_finish_Reading
-
-	test ecx, ecx
-	jz .No_more_buffer_space_to_put_characters_on
-
-	mov [edi], al
-	dec ecx
-	inc edi
-
-	mov [esp-1], al
-	dec esp
-	call dword [IUtility.Write_Char]
-
-	jmp .Loop_until_finish_Reading
-
-	.Wait_for_IRQ:
-	hlt
-	jmp .Loop_until_finish_Reading
-	.No_more_buffer_space_to_put_characters_on:
-	inc edx
-	jmp .Loop_until_finish_Reading
-
-	.Finish:
-	call dword [IVideo.New_Line]
-
-	neg cx
-	mov ebx, .NumberOfCharsRead
-	add cx, .Count
-	mov [ebx], cx
-
-	test edx, edx
-	jnz .Buffer_too_small
+	mov ebx, .Ch
+	mov [ebx], al
 	xor eax, eax
 
 	.Return:
-	pop edi
-	pop edx
-	pop ecx
 	pop ebx
 	leave
-	ret 10
-	.Error1:
-	mov eax, INVALID_COUNT
+	ret 4
+	.Buffer_is_empty:
+	mov eax, BUFFER_EMPTY
 	jmp .Return
-	.Buffer_too_small:
-	mov eax, BUFFER_NOT_LARGE_ENOUGH
-	jmp .Return
+	restore .Ch
 
-	restore .Buffer
-	restore .Count
-	restore .NumberOfCharsRead
-
-Function_Handle_Scancode:
+Function_Translate_Scancode:
 	.Case_AL_of:
 		._F0:
 		cmp al, $F0
@@ -239,9 +175,6 @@ Function_Handle_Scancode:
 		cmp ah, 1
 		je .End_Case_Do_Nothing
 
-		cmp al, $5A	; Enter key scancode is $5A
-		je .End_Case
-
 		mov ebx, [IKeyboard]
 		bt word [ebx+Var.Flag], Shift_bit
 		jc ._Use_Shift_Scancode
@@ -256,19 +189,109 @@ Function_Handle_Scancode:
 		._Translate_Scancode:
 		xlatb
 	.End_Case:
-	mov ebx, [IKeyboard]
 	ret
 	.End_Case_Do_Nothing:
-	mov ebx, [IKeyboard]
 	xor eax, eax
 	ret
 
 Function_Clear_Keyboard_Buffer:
 	push ebx
 	mov ebx, [IKeyboard]
-	lea eax, [ebx+Keyboard_Buffer]
-	call dword [IUtility.Clear_Ring_Buffer]
+	add ebx, Keyboard_Buffer
+	call Function_Clear_Ring_Buffer
 	pop ebx
+	ret
+
+Function_Create_Ring_Buffer:
+	.Buffer equ dword [esp+12]
+	.Count equ dword [esp+8]
+
+	push ebx
+
+	cmp .Count, 0
+	je .Error1
+
+	mov ebx, .Buffer
+	mov eax, .Count
+	add eax, 12
+	mov [ebx+4], eax
+	mov [ebx+8], eax
+	add eax, ebx
+	mov [ebx], eax
+
+	xor eax, eax
+
+	.Return:
+	pop ebx
+	ret 8
+	.Error1:
+	mov eax, INVALID_COUNT
+	jmp .Return
+	restore .Buffer
+	restore .Count
+
+Function_Ring_Buffer_Read:
+	mov eax, [ebx+4]
+
+	cmp eax, [ebx+8]
+	je .Buffer_Empty
+
+	inc eax
+	cmp eax, [ebx]
+	jna .j1
+
+	lea eax, [ebx+12]
+
+	.j1: mov [ebx+4], eax
+	mov al, [eax]
+
+	xor ah, ah
+	ret
+	.Buffer_Empty:
+	mov ah, -1
+	ret
+
+Function_Ring_Buffer_Write:
+	.Buffer equ dword [esp+9]
+	.In equ byte [esp+8]
+
+	push ebx
+
+	mov ebx, .Buffer
+	mov eax, [ebx+8]
+
+	inc eax
+	cmp eax, [ebx]
+	jna .j1
+
+	lea eax, [ebx+12]
+
+	.j1:
+	cmp eax, [ebx+4]
+	jne .j2
+
+	inc eax
+	cmp eax, [ebx]
+	jna .j2
+
+	lea eax, [ebx+12]
+
+	.j2:
+	mov [ebx+8], eax
+	mov bl, .In
+	mov [eax], bl
+
+	xor eax, eax
+
+	.Return:
+	pop ebx
+	ret 5
+	restore .Buffer
+	restore .In
+
+Function_Clear_Ring_Buffer:
+	mov eax, [ebx+8]
+	mov [ebx+4], eax
 	ret
 
 Procedure_IRQ1:
@@ -287,7 +310,7 @@ Procedure_IRQ1:
 	push ecx
 	dec esp
 	mov [esp], al
-	call dword [IUtility.Ring_Buffer_Write]
+	call Function_Ring_Buffer_Write
 
 	jmp .loop1
 
@@ -309,215 +332,249 @@ Var:
 	Keyboard_Buffer db (1024+13) dup 0
 
 Scancodes_Table:
-	._0 db $00
-	._1 db $00 ; F9
-	._2 db $00
-	._3 db $00 ; F5
-	._4 db $00 ; F3
-	._5 db $00 ; F1
-	._6 db $00 ; F2
-	._7 db $00 ; F12
-	._8 db $00
-	._9 db $00 ; F10
-	._A db $00 ; F8
-	._B db $00 ; F6
-	._C db $00 ; F4
-	._D db $00 ; Tab
+	._0 db 0
+	._1 db 0 ; F9
+	._2 db 0
+	._3 db 0 ; F5
+	._4 db 0 ; F3
+	._5 db 0 ; F1
+	._6 db 0 ; F2
+	._7 db 0 ; F12
+	._8 db 0
+	._9 db 0 ; F10
+	._A db 0 ; F8
+	._B db 0 ; F6
+	._C db 0 ; F4
+	._D db 0 ; Tab
 	._E db '`' ; `
-	._F db $00
+	._F db 0
 
-	._10 db $00
-	._11 db $00 ; Alt
-	._12 db $00 ; Shift
-	._13 db $00
-	._14 db $00 ; Ctrl
+	._10 db 0
+	._11 db 0 ; Alt
+	._12 db 0 ; Shift
+	._13 db 0
+	._14 db 0 ; Ctrl
 	._15 db 'q' ; q
 	._16 db '1' ; 1
-	._17 db $00
-	._18 db $00
-	._19 db $00
+	._17 db 0
+	._18 db 0
+	._19 db 0
 	._1A db 'z' ; z
 	._1B db 's' ; s
 	._1C db 'a' ; a
 	._1D db 'w' ; w
 	._1E db '2' ; 2
-	._1F db $00
+	._1F db 0
 
-	._20 db $00
+	._20 db 0
 	._21 db 'c' ; c
 	._22 db 'x' ; x
 	._23 db 'd' ; d
 	._24 db 'e' ; e
 	._25 db '4' ; 4
 	._26 db '3' ; 3
-	._27 db $00
-	._28 db $00
+	._27 db 0
+	._28 db 0
 	._29 db ' ' ; Space
 	._2A db 'v' ; v
 	._2B db 'f' ; f
 	._2C db 't' ; t
 	._2D db 'r' ; r
 	._2E db '5' ; 5
-	._2F db $00
+	._2F db 0
 
-	._30 db $00
+	._30 db 0
 	._31 db 'n' ; n
 	._32 db 'b' ; b
 	._33 db 'h' ; h
 	._34 db 'g' ; g
 	._35 db 'y' ; y
 	._36 db '6' ; 6
-	._37 db $00
-	._38 db $00
-	._39 db $00
+	._37 db 0
+	._38 db 0
+	._39 db 0
 	._3A db 'm' ; m
 	._3B db 'j' ; j
 	._3C db 'u' ; u
 	._3D db '7' ; 7
 	._3E db '8' ; 8
-	._3F db $00
+	._3F db 0
 
-	._40 db $00
+	._40 db 0
 	._41 db ',' ; ,
 	._42 db 'k' ; k
 	._43 db 'i' ; i
 	._44 db 'o' ; o
 	._45 db '0' ; 0
 	._46 db '9' ; 9
-	._47 db $00
-	._48 db $00
+	._47 db 0
+	._48 db 0
 	._49 db '.' ; .
 	._4A db '/' ; /
 	._4B db 'l' ; l
 	._4C db ';' ; ;
 	._4D db 'p' ; p
 	._4E db '-' ; -
-	._4F db $00
+	._4F db 0
 
-	._50 db $00
-	._51 db $00
+	._50 db 0
+	._51 db 0
 	._52 db '''' ; '
-	._53 db $00
+	._53 db 0
 	._54 db '[' ; [
 	._55 db '=' ; =
-	._56 db $00
-	._57 db $00
-	._58 db $00
-	._59 db $00 ; Right Shift
-	._5A db $00 ; Enter
+	._56 db 0
+	._57 db 0
+	._58 db 0
+	._59 db 0 ; Right Shift
+	._5A db 13 ; Enter
 	._5B db ']' ; ]
-	._5C db $00
+	._5C db 0
 	._5D db '\' ; \
-	._5E db $00
-	._5F db $00
+	._5E db 0
+	._5F db 0
 
-	repeat 160
-	db $00
+	._60 db 0
+	._61 db 0
+	._62 db 0
+	._63 db 0
+	._64 db 0
+	._65 db 0
+	._66 db 8 ; Backspace
+	._67 db 0
+	._68 db 0
+	._69 db 0
+	._6A db 0
+	._6B db 0
+	._6C db 0
+	._6D db 0
+	._6E db 0
+	._6F db 0
+
+	repeat $90
+	db 0
 	end repeat
 
 Shift_Scancodes_Table:
-	._0 db $00
-	._1 db $00 ; F9
-	._2 db $00
-	._3 db $00 ; F5
-	._4 db $00 ; F3
-	._5 db $00 ; F1
-	._6 db $00 ; F2
-	._7 db $00 ; F12
-	._8 db $00
-	._9 db $00 ; F10
-	._A db $00 ; F8
-	._B db $00 ; F6
-	._C db $00 ; F4
-	._D db $00 ; Tab
+	._0 db 0
+	._1 db 0 ; F9
+	._2 db 0
+	._3 db 0 ; F5
+	._4 db 0 ; F3
+	._5 db 0 ; F1
+	._6 db 0 ; F2
+	._7 db 0 ; F12
+	._8 db 0
+	._9 db 0 ; F10
+	._A db 0 ; F8
+	._B db 0 ; F6
+	._C db 0 ; F4
+	._D db 0 ; Tab
 	._E db '~' ; `
-	._F db $00
+	._F db 0
 
-	._10 db $00
-	._11 db $00 ; Alt
-	._12 db $00 ; Shift
-	._13 db $00
-	._14 db $00 ; Ctrl
+	._10 db 0
+	._11 db 0 ; Alt
+	._12 db 0 ; Shift
+	._13 db 0
+	._14 db 0 ; Ctrl
 	._15 db 'Q' ; q
 	._16 db '!' ; 1
-	._17 db $00
-	._18 db $00
-	._19 db $00
+	._17 db 0
+	._18 db 0
+	._19 db 0
 	._1A db 'Z' ; z
 	._1B db 'S' ; s
 	._1C db 'A' ; a
 	._1D db 'W' ; w
 	._1E db '@' ; 2
-	._1F db $00
+	._1F db 0
 
-	._20 db $00
+	._20 db 0
 	._21 db 'C' ; c
 	._22 db 'X' ; x
 	._23 db 'D' ; d
 	._24 db 'E' ; e
 	._25 db '$' ; 4
 	._26 db '#' ; 3
-	._27 db $00
-	._28 db $00
+	._27 db 0
+	._28 db 0
 	._29 db ' ' ; Space
 	._2A db 'V' ; v
 	._2B db 'F' ; f
 	._2C db 'T' ; t
 	._2D db 'R' ; r
 	._2E db '%' ; 5
-	._2F db $00
+	._2F db 0
 
-	._30 db $00
+	._30 db 0
 	._31 db 'N' ; n
 	._32 db 'B' ; b
 	._33 db 'H' ; h
 	._34 db 'G' ; g
 	._35 db 'Y' ; y
 	._36 db '^' ; 6
-	._37 db $00
-	._38 db $00
-	._39 db $00
+	._37 db 0
+	._38 db 0
+	._39 db 0
 	._3A db 'M' ; m
 	._3B db 'J' ; j
 	._3C db 'U' ; u
 	._3D db '&' ; 7
 	._3E db '*' ; 8
-	._3F db $00
+	._3F db 0
 
-	._40 db $00
+	._40 db 0
 	._41 db '<' ; ,
 	._42 db 'K' ; k
 	._43 db 'I' ; i
 	._44 db 'O' ; o
 	._45 db ')' ; 0
 	._46 db '(' ; 9
-	._47 db $00
-	._48 db $00
+	._47 db 0
+	._48 db 0
 	._49 db '>' ; .
 	._4A db '?' ; /
 	._4B db 'L' ; l
 	._4C db ':' ; ;
 	._4D db 'P' ; p
 	._4E db '_' ; -
-	._4F db $00
+	._4F db 0
 
-	._50 db $00
-	._51 db $00
+	._50 db 0
+	._51 db 0
 	._52 db '"' ; '
-	._53 db $00
+	._53 db 0
 	._54 db '{' ; [
 	._55 db '+' ; =
-	._56 db $00
-	._57 db $00
-	._58 db $00
-	._59 db $00 ; Right Shift
-	._5A db $00 ; Enter
+	._56 db 0
+	._57 db 0
+	._58 db 0
+	._59 db 0 ; Right Shift
+	._5A db 13 ; Enter
 	._5B db '}' ; ]
-	._5C db $00
+	._5C db 0
 	._5D db '|' ; \
-	._5E db $00
-	._5F db $00
+	._5E db 0
+	._5F db 0
 
-	repeat 160
-	db $00
+	._60 db 0
+	._61 db 0
+	._62 db 0
+	._63 db 0
+	._64 db 0
+	._65 db 0
+	._66 db 8 ; Backspace
+	._67 db 0
+	._68 db 0
+	._69 db 0
+	._6A db 0
+	._6B db 0
+	._6C db 0
+	._6D db 0
+	._6E db 0
+	._6F db 0
+
+	repeat $90
+	db 0
 	end repeat

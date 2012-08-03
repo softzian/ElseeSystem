@@ -14,10 +14,11 @@ use32
 
 IVideo = $100600
 ; Function 1: Write_Telex (var Text : Array of Char; Count : Word)
-; Function 2: Clear_Display
+; Function 2: Clear_Screen
 ; Function 3: Set_Cursor (x, y : Byte)
 ; Function 4: Get_Cursor (var x, var y : Byte)
 ; Function 5: New_Line
+; Function 6: Move_Cursor (Step : Integer16)
 
 Function_Init:
 	push ebx
@@ -29,7 +30,7 @@ Function_Init:
 	mov [edi], eax
 	lea eax, [ebx+Function_Write_Telex]
 	mov [edi+4], eax
-	lea eax, [ebx+Function_Clear_Display]
+	lea eax, [ebx+Function_Clear_Screen]
 	mov [edi+8], eax
 	lea eax, [ebx+Function_Set_Cursor]
 	mov [edi+12], eax
@@ -37,6 +38,8 @@ Function_Init:
 	mov [edi+16], eax
 	lea eax, [ebx+Function_New_Line]
 	mov [edi+20], eax
+	lea eax, [ebx+Function_Move_Cursor]
+	mov [edi+24], eax
 
 	xor eax, eax
 	pop edi
@@ -109,7 +112,7 @@ Function_Write_Telex:
 	restore .Count
 	restore .Text
 
-Function_Clear_Display:
+Function_Clear_Screen:
 	push ebx
 	push edi
 	push ecx
@@ -194,9 +197,65 @@ Function_New_Line:
 	pop ebx
 	ret
 
+Function_Move_Cursor:
+	.Step equ word [esp+12]  ; Step : Integer16
+	push ebx
+	push edi
+
+	xor eax, eax
+	mov ebx, [IVideo]
+	xor edi, edi
+	mov di, [ebx+Var.Cursor]
+
+	mov ax, .Step
+	test ax, ax
+	jz .Return
+	jns .Positive_Step
+
+	test edi, edi
+	jz .Return
+
+	neg ax
+	cmp eax, edi
+	jbe .j1
+	mov eax, edi
+	.j1:
+
+	shr eax, 1
+	jnc .j2
+	mov [$B8000+edi*2-2], word 0
+	dec edi
+	test eax, eax
+	jz .Finish
+	.j2:
+
+	.Loop:
+	mov [$B8000+edi*2-4], dword 0
+	sub edi, 2
+	dec eax
+	test eax, eax
+	jnz .Loop
+	jmp .Finish
+
+	.Positive_Step:
+	add edi, eax
+	cmp di, 4000
+	jb .Finish
+	sub di, 4000
+	call Function_Clear_Screen
+
+	.Finish:
+	mov [ebx+Var.Cursor], di
+
+	.Return:
+	xor eax, eax
+	pop edi
+	pop ebx
+	ret 2
+	restore .Step
+
 Const:
 	Write_Flag = 0
-
 Var:
 	.Cursor dw 0
 	.Flag dw 0

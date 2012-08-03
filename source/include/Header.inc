@@ -10,7 +10,7 @@ IInterrupt.Send_EOI = IInterrupt + 20
 
 IKeyboard = $100400
 IKeyboard.Init_Keyboard = IKeyboard + 4
-IKeyboard.Read = IKeyboard + 8
+IKeyboard.Read_Keyboard_Buffer = IKeyboard + 8
 IKeyboard.Clear_Keyboard_Buffer = IKeyboard + 12
 
 IVideo = $100600
@@ -19,6 +19,7 @@ IVideo.Clear_Display = IVideo + 8
 IVideo.Set_Cursor = IVideo + 12
 IVideo.Get_Cursor = IVideo + 16
 IVideo.New_Line = IVideo + 20
+IVideo.Move_Cursor = IVideo + 24
 
 IUtility = $100A00
 IUtility.Unsigned_to_HexStr1 = IUtility + 4

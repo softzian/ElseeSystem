@@ -18,10 +18,7 @@ IUtility = $100A00
 ; Function 2: Write_Unsigned_Hex (Num : LongWord)
 ; Function 3: Write_Char (Ch : Char)
 ; Function 4: Write_String1 (var Str : String1)
-; Function 5: Create_Ring_Buffer (var Buffer : Ring_Buffer; Count : LongWord)
-; Function 6: Ring_Buffer_Read (var Buffer : Ring_Buffer; var Out : Byte)
-; Function 7: Ring_Buffer_Write (var Buffer : Ring_Buffer; In : Byte)
-; Function 8: Clear_Ring_Buffer (var Buffer : Ring_Buffer)
+
 ; Function 9: Read_String1 (var Str : String1; Count : Word)
 ; Function 10: Read_Char (var Ch : Char)
 ; Function 11: HexStr1_to_Unsigned (var Num : Unsigned_Integer; var HexStr : String1; Word_size : Byte)
@@ -43,14 +40,14 @@ Function_Init:
 	mov [edi+12], eax
 	lea eax, [ebx+Function_Write_String1]
 	mov [edi+16], eax
-	lea eax, [ebx+Function_Create_Ring_Buffer]
-	mov [edi+20], eax
-	lea eax, [ebx+Function_Ring_Buffer_Read]
-	mov [edi+24], eax
-	lea eax, [ebx+Function_Ring_Buffer_Write]
-	mov [edi+28], eax
-	lea eax, [ebx+Function_Clear_Ring_Buffer]
-	mov [edi+32], eax
+	;lea eax, [ebx+Function_Create_Ring_Buffer]
+	;mov [edi+20], eax
+	;lea eax, [ebx+Function_Ring_Buffer_Read]
+	;mov [edi+24], eax
+	;lea eax, [ebx+Function_Ring_Buffer_Write]
+	;mov [edi+28], eax
+	;lea eax, [ebx+Function_Clear_Ring_Buffer]
+	;mov [edi+32], eax
 	lea eax, [ebx+Function_Read_String1]
 	mov [edi+36], eax
 	lea eax, [ebx+Function_Read_Char]
@@ -222,118 +219,6 @@ Function_Write_String1:
 	ret 4
 	restore .Str
 
-Function_Create_Ring_Buffer:
-	.Buffer equ dword [esp+12]
-	.Count equ dword [esp+8]
-
-	push ebx
-
-	cmp .Count, 0
-	je .Error1
-
-	mov ebx, .Buffer
-	mov eax, .Count
-	add eax, 12
-	mov [ebx+4], eax
-	mov [ebx+8], eax
-	add eax, ebx
-	mov [ebx], eax
-
-	xor eax, eax
-
-	.Return:
-	pop ebx
-	ret 8
-	.Error1:
-	mov eax, INVALID_COUNT
-	jmp .Return
-	restore .Buffer
-	restore .Count
-
-Function_Ring_Buffer_Read:
-	.Buffer equ dword [esp+12]
-	.Out equ dword [esp+8]
-
-	push ebx
-
-	mov ebx, .Buffer
-	mov eax, [ebx+4]
-
-	cmp eax, [ebx+8]
-	je .Buffer_Empty
-
-	inc eax
-	cmp eax, [ebx]
-	jna .j1
-
-	lea eax, [ebx+12]
-
-	.j1: mov [ebx+4], eax
-	mov bl, [eax]
-	mov eax, .Out
-	mov [eax], bl
-
-	xor eax, eax
-
-	.Return:
-	pop ebx
-	ret 8
-	.Buffer_Empty:
-	mov eax, BUFFER_EMPTY
-	jmp .Return
-	restore .Buffer
-	restore .Out
-
-Function_Ring_Buffer_Write:
-	.Buffer equ dword [esp+9]
-	.In equ byte [esp+8]
-
-	push ebx
-
-	mov ebx, .Buffer
-	mov eax, [ebx+8]
-
-	inc eax
-	cmp eax, [ebx]
-	jna .j1
-
-	lea eax, [ebx+12]
-
-	.j1:
-	cmp eax, [ebx+4]
-	jne .j2
-
-	inc eax
-	cmp eax, [ebx]
-	jna .j2
-
-	lea eax, [ebx+12]
-
-	.j2:
-	mov [ebx+8], eax
-	mov bl, .In
-	mov [eax], bl
-
-	xor eax, eax
-
-	.Return:
-	pop ebx
-	ret 5
-	restore .Buffer
-	restore .In
-
-Function_Clear_Ring_Buffer:
-	.Buffer equ dword [esp+8]
-
-	push ebx
-	mov ebx, .Buffer
-	mov eax, [ebx+8]
-	mov [ebx+4], eax
-	pop ebx
-	ret 4
-
-	restore .Buffer
-
 Function_Read_String1:
 	.Str equ dword [esp+10]
 	.Count equ word [esp+8]
@@ -347,38 +232,131 @@ Function_Read_String1:
 	sub ebx, 2
 	mov [esp-10], ebx
 	sub esp, 10
-	call dword [IKeyboard.Read]
+	call Function_Read
 	pop ebx
 	ret 6
 
 	restore .Str
 	restore .Count
 
-Function_Read_Char:
-	.Ch equ dword [esp+8]
-	push ebx
+Function_Read:
+	.Buffer equ dword [ebp+14]	; var Buffer : Array of Char
+	.Count equ word [ebp+12]	; Count : Word
+	.NumberOfCharsRead equ dword [ebp+8]	; var NumberOfCharsRead : Word
+	; Local Var:
+	.Ch equ byte [ebp-1]	; Ch : Char
 
-	mov ebx, .Ch
-	mov [esp-6], ebx
-	lea eax, [esp-2]
-	mov word [esp-8], 1
-	mov [esp-12], eax
-	sub esp, 12
-	call dword [IKeyboard.Read]
+	push ebp
+	mov ebp, esp
+	dec esp
+	push ecx
+	push edi
 
-	cmp word [esp], 0
-	je .Set_Result_to_Nul
-	jne .Return
+	xor ecx, ecx
+	mov edi, .Buffer
+	mov cx, .Count
 
-	.Set_Result_to_Nul:
-	mov byte [ebx], 0
+	test ecx, ecx	; Check .Count before continue
+	jz .Error1
+
+	.Loop:
+	lea eax, .Ch
+	push eax
+	call dword [IKeyboard.Read_Keyboard_Buffer]
+
+	test eax, eax
+	jnz .Wait_for_IRQ
+
+	; If Enter is press then Exit loop
+	mov al, .Ch
+	cmp al, 13
+	je .Finish
+
+	test al, al
+	jz .Loop
+
+	cmp al, 8
+	je .Backspace_case
+
+	test ecx, ecx
+	jz .Loop
+
+	mov [edi], al
+	dec ecx
+	inc edi
+
+	mov [esp-1], al
+	dec esp
+	call dword [IUtility.Write_Char]
+
+	jmp .Loop
+
+	.Wait_for_IRQ:
+	hlt
+	jmp .Loop
+
+	.Backspace_case:
+	cmp cx, .Count
+	je .Loop
+	inc cx
+	dec edi
+	mov [esp-2], word -1
+	sub esp, 2
+	call dword [IVideo.Move_Cursor]
+	jmp .Loop
+
+	.Finish:
+	call dword [IVideo.New_Line]
+
+	neg cx
+	mov edi, .NumberOfCharsRead
+	add cx, .Count
+	mov [edi], cx
+
+	xor eax, eax
 
 	.Return:
-	add esp, 2
-	pop ebx
-	ret 4
+	pop edi
+	pop ecx
+	leave
+	ret 10
+	.Error1:
+	mov eax, INVALID_COUNT
+	jmp .Return
 
 	restore .Ch
+	restore .Buffer
+	restore .Count
+	restore .NumberOfCharsRead
+
+Function_Read_Char:
+	.Ch equ dword [ebp+8]	; var Ch : Char
+	; Local var
+	.t equ word [ebp-2]	; var t : Word
+
+	push ebp
+	mov ebp, esp
+	sub esp, 2
+
+	mov eax, .Ch
+	push eax
+	mov [esp-2], word 1
+	lea eax, .t
+	mov [esp-6], eax
+	sub esp, 6
+	call Function_Read
+
+	cmp .t, 1
+	je .Return
+	mov eax, .Ch
+	mov [eax], byte 0
+
+	.Return:
+	xor eax, eax
+	leave
+	ret 4
+	restore .Ch
+	restore .t
 
 Function_HexStr1_to_Unsigned:
 	.Num equ dword [ebp+13] ; var Num : Unsigned_Integer
