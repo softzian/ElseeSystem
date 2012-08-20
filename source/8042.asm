@@ -15,7 +15,6 @@ use32
 
 IKeyboard = $100400
 ; Function 1: Init_Keyboard
-; Function 2: Read (var Buffer : Array of Char; Count : Word; var NumberOfCharsRead : Word)
 ; Function 2: Read_Keyboard_Buffer (var Ch : Char)
 ; Function 3: Clear_Keyboard_Buffer
 

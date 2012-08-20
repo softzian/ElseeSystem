@@ -14,14 +14,14 @@ include 'include\Header.inc'
 include 'include\errcode.inc'
 
 IUtility = $100A00
-; Function 1: Unsigned_to_HexStr1 (Num : Byte; var HexStr : String1; Count : Word)
-; Function 2: Write_Unsigned_Hex (Num : LongWord)
+; Function 1: Cardinal_to_HexStr (Num : Byte; var HexStr : String; Count : Word)
+; Function 2: Write_Cardinal_Hex (Num : LongWord)
 ; Function 3: Write_Char (Ch : Char)
-; Function 4: Write_String1 (var Str : String1)
+; Function 4: Write_String (var Str : String)
 
-; Function 9: Read_String1 (var Str : String1; Count : Word)
+; Function 9: Read_String (var Str : String; Count : Word)
 ; Function 10: Read_Char (var Ch : Char)
-; Function 11: HexStr1_to_Unsigned (var Num : Unsigned_Integer; var HexStr : String1; Word_size : Byte)
+; Function 11: HexStr_to_Cardinal (var Num : Cardinal; var HexStr : String; Word_size : Byte)
 ; Function 12: HexChar_to_Byte (var Num : Byte; HexChar : Char)
 
 Function_Init:
@@ -32,13 +32,13 @@ Function_Init:
 	mov ebx, eax
 	mov edi, IUtility
 	mov [edi], eax
-	lea eax, [ebx+Function_Unsigned_to_HexStr1]
+	lea eax, [ebx+Function_Cardinal_to_HexStr]
 	mov [edi+4], eax
-	lea eax, [ebx+Function_Write_Unsigned_Hex]
+	lea eax, [ebx+Function_Write_Cardinal_Hex]
 	mov [edi+8], eax
 	lea eax, [ebx+Function_Write_Char]
 	mov [edi+12], eax
-	lea eax, [ebx+Function_Write_String1]
+	lea eax, [ebx+Function_Write_String]
 	mov [edi+16], eax
 	;lea eax, [ebx+Function_Create_Ring_Buffer]
 	;mov [edi+20], eax
@@ -48,11 +48,11 @@ Function_Init:
 	;mov [edi+28], eax
 	;lea eax, [ebx+Function_Clear_Ring_Buffer]
 	;mov [edi+32], eax
-	lea eax, [ebx+Function_Read_String1]
+	lea eax, [ebx+Function_Read_String]
 	mov [edi+36], eax
 	lea eax, [ebx+Function_Read_Char]
 	mov [edi+40], eax
-	lea eax, [ebx+Function_HexStr1_to_Unsigned]
+	lea eax, [ebx+Function_HexStr_to_Cardinal]
 	mov [edi+44], eax
 	lea eax, [ebx+Function_HexChar_to_Byte]
 	mov [edi+48], eax
@@ -62,7 +62,7 @@ Function_Init:
 	pop ebx
 	ret
 
-Function_Unsigned_to_HexStr1:
+Function_Cardinal_to_HexStr:
 	.Num equ dword [ebp+14]
 	.HexStr equ dword [ebp+10]
 	.Count equ word [ebp+8]
@@ -145,7 +145,7 @@ Function_Unsigned_to_HexStr1:
 
 	.Error2:
 	mov [edi], word 0
-	mov eax, BUFFER_NOT_LARGE_ENOUGH
+	mov eax, NOT_LARGE_ENOUGH
 	jmp .Return
 
 	restore .Num
@@ -155,7 +155,7 @@ Function_Unsigned_to_HexStr1:
 	restore ._HexStr
 	restore ._Count
 
-Function_Write_Unsigned_Hex:
+Function_Write_Cardinal_Hex:
 	.Num equ dword [ebp+8]
 	._Num equ dword [esp+4]
 	; Local Var:
@@ -174,11 +174,11 @@ Function_Write_Unsigned_Hex:
 	push eax
 	mov [esp-2], word 8
 	sub esp, 2
-	call Function_Unsigned_to_HexStr1
+	call Function_Cardinal_to_HexStr
 
 	lea eax, .Str
 	push eax
-	call Function_Write_String1
+	call Function_Write_String
 
 	leave
 	xor eax, eax
@@ -204,7 +204,7 @@ Function_Write_Char:
 	ret 1
 	restore .Value
 
-Function_Write_String1:
+Function_Write_String:
 	.Str equ dword [esp+8]
 	push ebx
 	mov ebx, .Str
@@ -219,7 +219,7 @@ Function_Write_String1:
 	ret 4
 	restore .Str
 
-Function_Read_String1:
+Function_Read_String:
 	.Str equ dword [esp+10]
 	.Count equ word [esp+8]
 
@@ -358,9 +358,9 @@ Function_Read_Char:
 	restore .Ch
 	restore .t
 
-Function_HexStr1_to_Unsigned:
-	.Num equ dword [ebp+13] ; var Num : Unsigned_Integer
-	.HexStr equ dword [ebp+9] ; var HexStr : String1
+Function_HexStr_to_Cardinal:
+	.Num equ dword [ebp+13] ; var Num : Cardinal
+	.HexStr equ dword [ebp+9] ; var HexStr : String
 	.Word_size equ byte [ebp+8] ; Word_size : Byte
 	._HexStr equ dword [esp+5]
 	._Word_size equ byte [esp+4]
@@ -471,7 +471,7 @@ Function_HexStr1_to_Unsigned:
 	mov eax, NULL_STRING
 	ret 9
 	.Error3:
-	mov eax, BUFFER_NOT_LARGE_ENOUGH
+	mov eax, NOT_LARGE_ENOUGH
 	jmp .Return
 	.Error4:
 	mov eax, STRING_IS_NOT_A_NUMBER

@@ -15,10 +15,9 @@ include 'include/Errcode.inc'
 use32
 
 IMemory = $100000
-; Function 1: Create_Region (Offset : Address; Limit : Cardinal; Type : Cardinal8)
+; Function 1: Create_Region (Offset : Address; Limit : Cardinal; Type : Cardinal)
 ; Function 2: Allocate (var Ptr : Address; Region : Address; Size : Cardinal)
 ; Function 3: Deallocate (Ptr : Address; Region : Address)
-; Function 4: Reallocate (var Ptr : Address; Region : Address; Size : Cardinal)
 
 Function_Init:
 	push ebx
@@ -40,9 +39,9 @@ Function_Init:
 	ret
 
 Function_Create_Region:  ; Function 1
-	.Offset equ dword [ebp+13]
-	.Limit equ dword [ebp+9]
-	.Type equ byte [ebp+8]
+	.Offset equ dword [ebp+16]
+	.Limit equ dword [ebp+12]
+	.Type equ dword [ebp+8]
 
 	push ebp
 	mov ebp, esp
@@ -50,34 +49,37 @@ Function_Create_Region:  ; Function 1
 	push ebx
 	push ecx
 
-	mov al, .Type
-	test al, al
+	mov eax, .Type
+	test eax, eax
 	jnz .Error1
 
 	mov eax, .Limit
 	mov ebx, .Offset
 
-	sub eax, ebx
-	cmp eax, 21
-	jl .Error2
+	cmp eax, ebx
+	jbe .Error2
 
-	sub eax, 20
+	sub eax, ebx
+	cmp eax, 24
+	jb .Error2
+
+	sub eax, 23
 	mov ecx, eax
 
-	mov [ebx], byte 0
-	lea eax, [ebx+5]
-	mov [ebx+1], eax
+	mov [ebx], dword 0
+	lea eax, [ebx+8]
+	mov [ebx+4], eax
 	xor eax, eax
-	mov [ebx+5], eax
-	mov [ebx+9], ecx
-	mov [ebx+13], eax
-	mov [ebx+17], eax
+	mov [ebx+8], eax
+	mov [ebx+12], ecx
+	mov [ebx+16], eax
+	mov [ebx+20], eax
 
 	.Return:
 	pop ecx
 	pop ebx
 	leave
-	ret 9
+	ret 12
 	.Error1:
 	mov eax, UNSUPPORTED_FUNCTION
 	jmp .Return
@@ -103,10 +105,10 @@ Function_Allocate:    ; Function 2
 	mov ecx, .Size
 
 	mov ebx, .Region
-	cmp [ebx], byte 0
+	cmp [ebx], dword 0
 	jne .Error1
 
-	mov ebx, [ebx+1]
+	mov ebx, [ebx+4]
 	test ebx, ebx
 	jz .Error2
 
@@ -160,7 +162,7 @@ Function_Allocate:    ; Function 2
 
 	mov [ebx], dword 1
 	mov eax, .Region
-	cmp [eax+1], ebx
+	cmp [eax+4], ebx
 	jne .Done
 
 	.Repeat2:
@@ -172,7 +174,7 @@ Function_Allocate:    ; Function 2
 	jne .Repeat2
 	.End_Repeat2:
 
-	mov [eax+1], ebx
+	mov [eax+4], ebx
 
 	.Done:
 	xor eax, eax
@@ -188,7 +190,7 @@ Function_Allocate:    ; Function 2
 	mov eax, UNSUPPORTED_FUNCTION
 	jmp .Return
 	.Error2:
-	mov eax, OUT_OF_MEMORY
+	mov eax, NO_FREE_MEMORY
 	jmp .Return
 	restore .Ptr
 	restore .Region
@@ -198,8 +200,8 @@ Function_Deallocate:	; Function 3
 	.Ptr equ dword [ebp+12] ; Ptr : Address
 	.Region equ dword [ebp+8] ; Region : Address
 
-	mov eax, [esp+4]
-	cmp [eax], byte 0
+	mov eax, [esp+4]	; [esp+4] is Region
+	cmp [eax], dword 0
 	jne .Error1
 
 	push ebp
@@ -219,9 +221,9 @@ Function_Deallocate:	; Function 3
 	call .Merge_Free_Blocks
 
 	mov ebx, .Region
-	cmp [ebx+1], dword 0
+	cmp [ebx+4], dword 0
 	je .Change
-	cmp eax, [ebx+1]
+	cmp eax, [ebx+4]
 	jae .Done
 	.Change: mov [ebx+1], eax
 

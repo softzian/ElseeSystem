@@ -53,21 +53,21 @@ Begin:
 
 	.loop:
 	push Var.Text5
-	call dword [IUtility.Write_String1]
+	call dword [IUtility.Write_String]
 
 	push Var.Str
 	mov [esp-2], word 255
 	sub esp, 2
-	call dword [IUtility.Read_String1]
+	call dword [IUtility.Read_String]
 
 	push Var.Num
 	push Var.Str
 	mov [esp-1], byte 4
 	dec esp
-	call dword [IUtility.HexStr1_to_Unsigned]
+	call dword [IUtility.HexStr_to_Cardinal]
 
 	push [Var.Num]
-	call dword [IUtility.Write_Unsigned_Hex]
+	call dword [IUtility.Write_Cardinal_Hex]
 
 	call dword [IVideo.New_Line]
 	jmp .loop

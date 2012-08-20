@@ -22,17 +22,20 @@ IVideo.New_Line = IVideo + 20
 IVideo.Move_Cursor = IVideo + 24
 
 IUtility = $100A00
-IUtility.Unsigned_to_HexStr1 = IUtility + 4
-IUtility.Write_Unsigned_Hex = IUtility + 8
+IUtility.Cardinal_to_HexStr = IUtility + 4
+IUtility.Write_Cardinal_Hex = IUtility + 8
 IUtility.Write_Char = IUtility + 12
-IUtility.Write_String1 = IUtility + 16
+IUtility.Write_String = IUtility + 16
 IUtility.Create_Ring_Buffer = IUtility + 20
 IUtility.Ring_Buffer_Read = IUtility + 24
 IUtility.Ring_Buffer_Write = IUtility + 28
 IUtility.Clear_Ring_Buffer = IUtility + 32
-IUtility.Read_String1 = IUtility + 36
+IUtility.Read_String = IUtility + 36
 IUtility.Read_Char = IUtility + 40
-IUtility.HexStr1_to_Unsigned = IUtility + 44
+IUtility.HexStr_to_Cardinal = IUtility + 44
 IUtility.HexChar_to_Byte = IUtility + 48
 
-Format_Hex = 1
+IMemory = $100000
+IMemory.Create_Region = IMemory + 4
+IMemory.Allocate = IMemory + 8
+IMemory.Deallocate = IMemory + 12

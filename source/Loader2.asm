@@ -79,8 +79,7 @@ Begin:
 
 	push $10000
 	push $3FFFFF
-	mov [esp-1], byte 0
-	dec esp
+	push 0
 	call dword [IMemory.Create_Region]
 
 	push $200000
