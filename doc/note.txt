@@ -1,0 +1,30 @@
+Source files list:
+	boot2.asm	Stage 1 Boot loader for FAT16 partition (Hard disk)
+	Loader.asm	Stage 2 Module loader v1
+	Loader2.asm	Stage 2 Module loader v2
+	Loader3.asm	PXE Module loader - Main part
+	Loader3_p1.inc	PXE Module loader - Part 1, contains some utility functions
+	8259A.asm	8259A PIC module, IInterrupt
+	VGA.asm		VGA module, IVideo
+	8042.asm	PS/2 8042 module, IKeyboard
+	Utility.asm	Utility functions module, IUtility
+	Memory.asm	Memory manager module, IMemory
+
+Booting sequence:
+	MSDOS FDISK MBR - Load and run the boot sector (boot2.bin)
+	boot2.bin - Load and run loader.bin file in FAT16 boot partition
+	loader.bin (v1 or v2) - Switch to Protected Mode. Init and load modules
+
+	loader.bin is loaded into address 800h. Loader v1 loads the modules without
+	memory manager, so address of each modules is fixed inside Loader v1 code.
+	Loader v2 loads the memory manager first, after that, it allocates memory
+	and loads the other modules.
+
+Loading module sequence:
+	1. Read the module file from disks or other storages to memory
+	2. Call the Init function of module
+	3. The Init function do:
+		- Fill the Interface Table
+		- Initialize module
+	4. If the module is program, it will not fill the Interface Table and will
+not return control to the module loader.

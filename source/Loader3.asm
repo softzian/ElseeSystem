@@ -84,6 +84,10 @@ PXE_Loader:
 	push dword $10000
 	call Function_Download_File
 
+	push Var.Memory_Module
+	push dword $10000
+	call Function_Download_File
+
 	test ax, ax
 	jnz Abort
 
