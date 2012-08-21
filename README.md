@@ -14,7 +14,7 @@ Design goals:
   
 See doc/INSTALL.txt for install guide
 
-See Wiki for more infomation
+See Wiki or doc for more infomation
 
 My references:
   - http://wiki.osdev.org ; An useful source for code examples and information
