@@ -80,31 +80,37 @@ PXE_Loader:
 	mov eax, [es:bx+20]
 	mov [Var.SIP], eax
 
-	push Var.Interrupt_Module
-	push dword $10000
-	call Function_Download_File
+	;push Var.Interrupt_Module
+	;push dword $10000
+	;call Function_Download_File
 
 	push Var.Memory_Module
-	push dword $10000
+	push dword $11000
 	call Function_Download_File
 
 	test ax, ax
 	jnz Abort
 
-	push $1000
-	push 0
-	push 14
-	call Function_Write_Telex
+	push Var.Video_Module
+	push dword $12000
+	call Function_Download_File
 
-	jmp Halt
+	test ax, ax
+	jnz Abort
+
+	push Var.Utility_Module
+	push dword $13000
+	call Function_Download_File
+
+	test ax, ax
+	jnz Abort
 
 Switch_to_Protected_Mode:
+	cli
+	call enable_A20
 	xor ax, ax
 	mov ds, ax
-	mov es, ax
-
-	call enable_A20
-	lgdt [GDT_Desc]
+	lgdt [ds:GDT_Desc]
 	mov eax, cr0
 	or eax, 1
 	mov cr0, eax
@@ -175,7 +181,9 @@ Function_GetAddr:
 
 Var:
 	.Text1 db 19,0,'Address to bootph: '
-	.Filename db 10,0,'config.ini'
+	.Memory_Module db 10,0,'Memory.bin'
+	.Video_Module db 7,0,'VGA.bin'
+	.Utility_Module db 11,0,'Utility.bin'
 	.EntryPointSP dd 0
 	.Bootph dd 0
 	.SIP dd 0
@@ -249,32 +257,6 @@ enable_A20:
 	jz .a20wait2
 	ret
 
-use32
-
-Begin:
-	mov ax, $10
-	mov ds, ax
-	mov ss, ax
-	mov es, ax
-	mov esp, $400000
-
-	cli
-	hlt
-
-Function_Load_Module:
-	.Offset equ dword [ebp+12]
-	.Filename equ dword [ebp+8]
-
-	enter 0, 0
-
-	xor eax, eax
-
-	.Return:
-	leave
-	ret 8
-	restore .Offset
-	restore .Filename
-
 GDT:
 	gdt_null:
 		dq 0
@@ -293,7 +275,96 @@ GDT:
 		db 11001111b
 		db 0
 	gdt_end:
-
 GDT_Desc:
-	dw gdt_end - GDT - 1
+	dw gdt_end - GDT
 	dd GDT
+
+
+use32
+
+Begin:
+	mov ax, $10
+	mov ds, ax
+	mov ss, ax
+	mov es, ax
+	mov esp, $400000
+
+	mov eax, $11000
+	call eax
+	mov eax, $12000
+	call eax
+	mov eax, $13000
+	call eax
+
+	call dword [IVideo.Clear_Screen]
+
+	push 0
+	push $3FFFFF
+	push 0
+	call dword [IMemory.Create_Region]
+
+	push $10000
+	push 0
+	push $3000
+	call dword [IMemory.Allocate]
+
+	call Print_Memory_Table
+
+	push $0
+	push $11000
+	push $11FFF
+	push $1
+	call dword [IMemory.Mark_Memory]
+
+	call Print_Memory_Table
+
+	push $0
+	push $12000
+	push $12FFF
+	push $2
+	call dword [IMemory.Mark_Memory]
+
+	call Print_Memory_Table
+
+	hlt
+
+Print_Memory_Table:
+	xor ecx, ecx
+
+	.Loop:
+	push dword [4+ecx]
+	call dword [IUtility.Write_Cardinal_Hex]
+	mov [esp-1], byte ' '
+	dec esp
+	call dword [IUtility.Write_Char]
+
+	push dword [4+ecx+4]
+	call dword [IUtility.Write_Cardinal_Hex]
+	mov [esp-1], byte ' '
+	dec esp
+	call dword [IUtility.Write_Char]
+
+	push dword [4+ecx+8]
+	call dword [IUtility.Write_Cardinal_Hex]
+
+	call dword [IVideo.New_Line]
+
+	add ecx, 12
+	cmp [4+ecx+4], dword 0
+	jne .Loop
+	call dword [IVideo.New_Line]
+	ret
+
+Function_Load_Module:
+	.Offset equ dword [ebp+12]
+	.Filename equ dword [ebp+8]
+
+	enter 0, 0
+
+	xor eax, eax
+
+	.Return:
+	leave
+	ret 8
+	restore .Offset
+	restore .Filename

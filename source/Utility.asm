@@ -28,7 +28,6 @@ Function_Init:
 	push ebx
 	push edi
 
-	cld
 	mov ebx, eax
 	mov edi, IUtility
 	mov [edi], eax
