@@ -12,7 +12,7 @@
 include 'include\Header.inc'
 include 'include\Errcode.inc'
 
-org $800
+org $7E00
 
 use16
 

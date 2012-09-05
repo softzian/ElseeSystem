@@ -25,7 +25,7 @@ Function_Init:
 
 	mov ebx, eax
 	mov edi, IInterrupt
-	cld
+
 	stosd
 	lea eax, [ebx+Function_Install_ISR]
 	stosd

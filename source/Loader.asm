@@ -11,7 +11,7 @@
 
 include 'include\Header.inc'
 
-org $800
+org $7E00
 
 use16
 

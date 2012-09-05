@@ -240,40 +240,57 @@ Function_Write_Telex:
 Print_Success:
 	mov ax, $B800
 	mov ds, ax
-	mov byte [0], 'S'
-	mov byte [1], 00001010b
-	mov byte [2], 'u'
-	mov byte [3], 00001010b
-	mov byte [4], 'c'
-	mov byte [5], 00001010b
-	mov byte [6], 'c'
-	mov byte [7], 00001010b
-	mov byte [8], 'e'
-	mov byte [9], 00001010b
-	mov byte [10], 's'
-	mov byte [11], 00001010b
-	mov byte [12], 's'
-	mov byte [13], 00001010b
+
+	xor bx, bx
+	mov es, bx
+	mov bx, [es:Var_p1.Cursor2]
+
+	mov byte [bx+0], 'S'
+	mov byte [bx+1], 00001010b
+	mov byte [bx+2], 'u'
+	mov byte [bx+3], 00001010b
+	mov byte [bx+4], 'c'
+	mov byte [bx+5], 00001010b
+	mov byte [bx+6], 'c'
+	mov byte [bx+7], 00001010b
+	mov byte [bx+8], 'e'
+	mov byte [bx+9], 00001010b
+	mov byte [bx+10], 's'
+	mov byte [bx+11], 00001010b
+	mov byte [bx+12], 's'
+	mov byte [bx+13], 00001010b
+
+	add bx, 160
+	mov [es:Var_p1.Cursor2], bx
 	ret
 
 Print_Failure:
 	mov ax, $B800
 	mov ds, ax
-	mov byte [0], 'F'
-	mov byte [1], 00001100b
-	mov byte [2], 'a'
-	mov byte [3], 00001100b
-	mov byte [4], 'i'
-	mov byte [5], 00001100b
-	mov byte [6], 'l'
-	mov byte [7], 00001100b
-	mov byte [8], 'u'
-	mov byte [9], 00001100b
-	mov byte [10], 'r'
-	mov byte [11], 00001100b
-	mov byte [12], 'e'
-	mov byte [13], 00001100b
+
+	xor bx, bx
+	mov es, bx
+	mov bx, [es:Var_p1.Cursor2]
+
+	mov byte [bx+0], 'F'
+	mov byte [bx+1], 00001100b
+	mov byte [bx+2], 'a'
+	mov byte [bx+3], 00001100b
+	mov byte [bx+4], 'i'
+	mov byte [bx+5], 00001100b
+	mov byte [bx+6], 'l'
+	mov byte [bx+7], 00001100b
+	mov byte [bx+8], 'u'
+	mov byte [bx+9], 00001100b
+	mov byte [bx+10], 'r'
+	mov byte [bx+11], 00001100b
+	mov byte [bx+12], 'e'
+	mov byte [bx+13], 00001100b
+
+	add bx, 160
+	mov [es:Var_p1.Cursor2], bx
 	ret
 
 Var_p1:
 	.Cursor dw 0
+	.Cursor2 dw 0

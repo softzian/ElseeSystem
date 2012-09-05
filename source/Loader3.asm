@@ -11,99 +11,39 @@
 
 include 'include\Header.inc'
 include 'include\Errcode.inc'
-include 'include\Pxe.inc'
 
 org $7C00
 
 use16
 
 PXE_Loader:
-	mov bp, sp
+	call Procedure_PXE_Start
 
-	; Checksum PXENV+ struct
-	mov di, bx
-	cmp dword [es:di], 'PXEN'
-	jne Abort
-	cmp word [es:di+4], 'V+'
-	jne Abort
-
-	mov cl, [es:di+8]
-	xor ch, ch
-	xor al, al
-	.Loop:
-	add al, [es:di]
-	inc di
-	loop .Loop
-	test al, al
-	jnz Abort
-
-	cmp [es:bx+6], word $0201
-	jb Abort
-
-	; Checksum PXE struct
-	les bx, [es:bx+$28]
-	mov di, bx
-	cmp dword [es:di], '!PXE'
-	jne Abort
-
-	mov cl, [es:di+4]
-	xor ch, ch
-	xor al, al
-	.Loop2:
-	add al, [es:di]
-	inc di
-	loop .Loop2
-	test al, al
-	jnz Abort
-
-	xor ax, ax
-	mov ds, ax
-	mov eax, [es:bx+$10]
-	mov [Var.EntryPointSP], eax
-
-	; Get cached info
-	push ds
-	push t_PXENV_GET_CACHED_INFO
-	push PXENV_GET_CACHED_INFO
-	call dword [Var.EntryPointSP]
-	add sp, 6
-
+	push Var.Interrupt_Module
+	push dword $10000
+	call Function_Download_File
 	test ax, ax
-	jne Abort
-
-	mov ax, word [t_PXENV_GET_CACHED_INFO.Buffer_Off]
-	mov word [Var.Bootph], ax
-	mov ax, word [t_PXENV_GET_CACHED_INFO.Buffer_Seg]
-	mov word [Var.Bootph+2], ax
-
-	les bx, [Var.Bootph]
-	mov eax, [es:bx+20]
-	mov [Var.SIP], eax
-
-	;push Var.Interrupt_Module
-	;push dword $10000
-	;call Function_Download_File
+	jnz Abort
 
 	push Var.Memory_Module
 	push dword $11000
 	call Function_Download_File
-
 	test ax, ax
 	jnz Abort
 
 	push Var.Video_Module
 	push dword $12000
 	call Function_Download_File
-
 	test ax, ax
 	jnz Abort
 
 	push Var.Utility_Module
 	push dword $13000
 	call Function_Download_File
-
 	test ax, ax
 	jnz Abort
+
+	call Procedure_PXE_Finish
 
 Switch_to_Protected_Mode:
 	cli
@@ -116,106 +56,22 @@ Switch_to_Protected_Mode:
 	mov cr0, eax
 	jmp $8:Begin
 
-Function_Download_File: ; (var Filename : String; Addr : Address32)
-	.Filename equ word [bp+8]
-	.Addr equ dword [bp+4]
-
-	push bp
-	mov bp, sp
-	push cx
-	push ds
-	push si
-	push es
-	push di
-
-	; Set t_PXENV_TFTP_READ_FILE.FileName to Filename
-	xor ax, ax
-	mov ds, ax
-	mov es, ax
-
-	mov si, .Filename
-	mov cx, [ds:si]
-	cmp cx, 127
-	ja .Error1     ; Filename too long
-
-	add si, 2
-	mov di, t_PXENV_TFTP_READ_FILE.FileName
-
-	rep movsb
-	mov [es:di], byte 0
-
-	; Set t_PXENV_TFTP_READ_FILE.Buffer to Addr
-	mov eax, .Addr
-	mov [t_PXENV_TFTP_READ_FILE.Buffer], eax
-	; BufferSize is fixed as 4096 bytes
-	mov [t_PXENV_TFTP_READ_FILE.BufferSize], $1000
-	mov eax, [Var.SIP]
-	mov [t_PXENV_TFTP_READ_FILE.ServerIPAddress], eax
-
-	push ds
-	push t_PXENV_TFTP_READ_FILE
-	push PXENV_TFTP_READ_FILE
-	call [Var.EntryPointSP]
-
-	.Return:
-	pop di
-	pop es
-	pop si
-	pop ds
-	pop cx
-	leave
-	ret 6
-	.Error1:
-	mov ax, -1 ; Filename too long
-	jmp .Return
-
-	restore .Filename
-	restore .Offset
-
 include 'Loader3_p1.inc'
-
-Function_GetAddr:
-	mov bp, sp
-	mov bx, [bp]
-	ret
+include 'Loader3_p2.inc'
 
 Var:
-	.Text1 db 19,0,'Address to bootph: '
+	.Interrupt_Module db 9,0,'8259A.bin'
 	.Memory_Module db 10,0,'Memory.bin'
 	.Video_Module db 7,0,'VGA.bin'
 	.Utility_Module db 11,0,'Utility.bin'
-	.EntryPointSP dd 0
-	.Bootph dd 0
-	.SIP dd 0
-
-t_PXENV_GET_CACHED_INFO:
-	.Status dw 0
-	.PacketType dw PXENV_PACKET_TYPE_DHCP_ACK
-	.BufferSize dw 0
-	.Buffer_Off dw 0
-	.Buffer_Seg dw 0
-	.BufferLimit dw 0
-t_PXENV_TFTP_READ_FILE:
-	.Status dw 0
-	.FileName db 128 dup 0
-	.BufferSize dd 0
-	.Buffer dd 0
-	.ServerIPAddress dd 0
-	.GatewayIPAddress dd 0
-	.McastIPAddress dd 0
-	.TFTPClntPort dw 69
-	.TFTPSrvPort dw 69
-	.TFTPOpenTimeOut dw 0
-	.TFTPReopenDelay dw 10
 
 Halt:
 	hlt
 	jmp Halt
 
 Abort:
-	xor ax, ax
-	mov sp, bp
-	retf
+	call Print_Failure
+	jmp Halt
 
 enable_A20:
 	call .a20wait
@@ -279,7 +135,6 @@ GDT_Desc:
 	dw gdt_end - GDT
 	dd GDT
 
-
 use32
 
 Begin:
@@ -289,6 +144,8 @@ Begin:
 	mov es, ax
 	mov esp, $400000
 
+	mov eax, $10000
+	call eax
 	mov eax, $11000
 	call eax
 	mov eax, $12000
@@ -296,42 +153,312 @@ Begin:
 	mov eax, $13000
 	call eax
 
-	call dword [IVideo.Clear_Screen]
+	sti
 
+	call dword [IVideo.Clear_Screen]
+	call Init_Memory_Table
+	call Search_RTL8139
+	call PCI_Config_RTL8139
+	call Start_RTL8139
+
+	push Var32.Text2
+	call dword [IUtility.Write_String]
+	call dword [IVideo.New_Line]
+
+	call Calculate_IP_Checksum
+
+	mov [esp-1], byte $20
+	dec esp
+	push Procedure_Timer_ISR
+	call dword [IInterrupt.Install_ISR]
+
+	mov [esp-1], byte 0
+	dec esp
+	call dword [IInterrupt.Enable_IRQ]
+
+	.Loop:
+	hlt
+	jmp .Loop
+
+RTL_Port = $4000
+
+Var32:
+	.Text db 20,0,'Packet transmitted! '
+	.Text3 db 17,0,'Packet received! '
+	.Text2 db 5,0,'Done!'
+	.Count db 36
+	.Port dw RTL_Port + $20
+
+macro Choose_PCI_Reg
+{
+	mov dx, $CF8
+	out dx, eax
+}
+macro Read_PCI_Reg
+{
+	mov dx, $CFC
+	in eax, dx
+}
+macro Write_PCI_Reg
+{
+	mov dx, $CFC
+	out dx, eax
+}
+
+Search_RTL8139:
+	mov ecx, $80000000
+	.Loop:
+	mov eax, ecx
+	Choose_PCI_Reg
+	Read_PCI_Reg
+	cmp eax, $813910EC
+	je .Found
+
+	add ecx, $800
+	cmp ecx, $80FFF800+$800
+	je .Return
+	jmp .Loop
+
+	.Found:
+
+	.Return:
+	ret
+
+PCI_Config_RTL8139:
+	; IOAR
+	lea eax, [ecx+4*4]
+	Choose_PCI_Reg
+	Read_PCI_Reg
+	mov eax, $4001
+	Write_PCI_Reg
+
+	; BMAR
+	lea eax, [ecx+$C*4]
+	Choose_PCI_Reg
+	Read_PCI_Reg
+	xor eax, eax
+	Write_PCI_Reg
+
+	; PCI Command
+	lea eax, [ecx+1*4]
+	Choose_PCI_Reg
+	mov dx, $CFC
+	in ax, dx
+	or al, 101b
+	out dx, ax
+
+	; IRL
+	lea eax, [ecx+$F*4]
+	Choose_PCI_Reg
+	Read_PCI_Reg
+
+	ret
+
+Start_RTL8139:
+	; Command
+	mov dx, RTL_Port + $37
+	xor eax, eax
+	in al, dx
+	bts eax, 4
+	out dx, al
+
+	.Loop:
+	in al, dx
+	mov ebx, eax
+	bt ebx, 4
+	jnz .Loop
+
+	; 93C46
+	mov dx, RTL_Port + $50
+	xor eax, eax
+	mov al, 11000000b
+	out dx, al
+
+	; CONFIG1
+	mov dx, RTL_Port + $52
+	in al, dx
+	btr eax, 4
+	btr eax, 0
+	bts eax, 5
+	out dx, al
+
+	; 93C46
+	mov dx, RTL_Port + $50
+	xor eax, eax
+	out dx, al
+
+	; IMR
+	mov dx, RTL_Port + $3C
+	mov ax, $FFFF
+	out dx, ax
+
+	mov [esp-1], byte $25
+	dec esp
+	push Function_RTL8139_ISR
+	call dword [IInterrupt.Install_ISR]
+
+	mov [esp-1], byte 5
+	dec esp
+	call dword [IInterrupt.Enable_IRQ]
+
+	; Command
+	mov dx, RTL_Port + $37
+	mov al, 1100b
+	out dx, al
+	in al, dx
+
+	; Allocate
+	sub esp, 4
+	lea eax, [esp]
+	push eax
+	push $0
+	push (8192 + 16)
+	call dword [IMemory.Allocate]
+	pop eax
+
+	; RBSTART
+	mov dx, RTL_Port + $30
+	out dx, eax
+
+	; RCR
+	mov dx, RTL_Port + $44
+	mov eax, $F
+	out dx, eax
+
+	ret
+
+Function_RTL8139_ISR:
+	pusha
+
+	xor eax, eax
+	mov dx, RTL_Port + $3E
+	in ax, dx
+	call Write_EAX
+	out dx, ax
+
+	call dword [IVideo.New_Line]
+
+	call dword [IInterrupt.Send_EOI]
+	popa
+	iret
+
+Procedure_Timer_ISR:
+	pusha
+
+	dec byte [Var32.Count]
+	cmp byte [Var32.Count], 0
+	jne .Return
+
+	mov [Var32.Count], byte 36
+
+	;cmp [Var32.Port], word (RTL_Port + $30)
+	;jb .j1
+	;mov [Var32.Port], word (RTL_Port + $20)
+	;.j1:
+
+	; Transmit descriptor
+	;mov dx, [Var32.Port]
+	;mov eax, Ethernet_Frame
+	;out dx, eax
+
+	; TDS
+	;sub dl, $10
+	;mov eax, $0038203C
+	;out dx, eax
+
+	;add [Var32.Port], word 4
+
+	.Return:
+	call dword [IInterrupt.Send_EOI]
+	popa
+	iret
+
+Write_EAX:
+	push eax
+	push eax
+	call dword [IUtility.Write_Cardinal_Hex]
+	mov [esp-1], byte ' '
+	dec esp
+	call dword [IUtility.Write_Char]
+	pop eax
+	ret
+
+Calculate_IP_Checksum:
+	xor eax, eax
+	xor ecx, ecx
+	.Loop1:
+	mov bx, [IP_Datagram+ecx*2]
+	xchg bl, bh
+	add ax, bx
+	adc ax, 0
+	inc ecx
+	cmp ecx, 10
+	jb .Loop1
+
+	xchg al, ah
+	not ax
+	mov [IP_Datagram.Header_Checksum], ax
+
+	xor eax, eax
+	mov ecx, 7
+	.Loop2:
+	mov bx, [ICMP_Load+ecx*2]
+	xchg bl, bh
+	add ax, bx
+	adc ax, 0
+	loop .Loop2
+	mov bx, [ICMP_Load]
+	xchg bl, bh
+	add ax, bx
+	adc ax, 0
+	xchg al, ah
+	not ax
+	mov [ICMP_Load.Checksum], ax
+
+	ret
+
+Init_Memory_Table:
 	push 0
 	push $3FFFFF
 	push 0
 	call dword [IMemory.Create_Region]
 
-	push $10000
-	push 0
-	push $3000
-	call dword [IMemory.Allocate]
-
-	call Print_Memory_Table
+	push $0
+	push $7E00
+	push $8DFF
+	push $1
+	call dword [IMemory.Mark_Memory]
 
 	push $0
 	push $11000
 	push $11FFF
-	push $1
+	push $2
 	call dword [IMemory.Mark_Memory]
-
-	call Print_Memory_Table
 
 	push $0
 	push $12000
 	push $12FFF
-	push $2
+	push $3
 	call dword [IMemory.Mark_Memory]
 
-	call Print_Memory_Table
+	push $0
+	push $13000
+	push $13FFF
+	push $4
+	call dword [IMemory.Mark_Memory]
 
-	hlt
+	ret
 
 Print_Memory_Table:
 	xor ecx, ecx
 
 	.Loop:
+	push dword ecx
+	call dword [IUtility.Write_Cardinal_Hex]
+	mov [esp-1], byte ' '
+	dec esp
+	call dword [IUtility.Write_Char]
+
 	push dword [4+ecx]
 	call dword [IUtility.Write_Cardinal_Hex]
 	mov [esp-1], byte ' '
@@ -368,3 +495,28 @@ Function_Load_Module:
 	ret 8
 	restore .Offset
 	restore .Filename
+
+Ethernet_Frame:
+	.MAC_Destination db $00,$A1,$B0,$00,$02,$D4
+	.MAC_Source db $FF,$FF,$FF,$FF,$FF,$FF
+	.Ethertype db $8, $00
+IP_Datagram:
+	.Version__IHL db $45
+	.Type_of_Service db 0
+	.Total_Length db $0,20+16
+	.Identification db $19,$93
+	.Flags__Fragment_Offset db $0,$0
+	.Time_to_Live db 32
+	.Protocol db 1
+	.Header_Checksum dw 0
+	.Source_Address db 192,168,100,100
+	.Destination_Address db 192,168,100,40
+ICMP_Load:
+	.Type db 8
+	.Code db 0
+	.Checksum dw 0
+	.Identifier dw 0
+	.Sequence_Number dw 0
+	.Data db 'PingPong'
+Pad:
+	db 10 dup 0

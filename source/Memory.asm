@@ -368,7 +368,8 @@ Function_Merge_Entry:
 		cmp ecx, ($4000 - 4)
 		jb .Loop
 	.End_Loop:
-	sub ecx, 12
+	sub edx, ebx
+	add ecx, edx
 
 	.Finish:
 	xor eax, eax
@@ -376,8 +377,7 @@ Function_Merge_Entry:
 	mov [ebx+ecx+12+4], eax
 	mov [ebx+ecx+12+8], eax
 
-	sub edx, ebx
-	cmp edx, -12
+	cmp edx, -24
 	jne .Return
 
 	mov [ebx+ecx+24], eax
@@ -390,8 +390,8 @@ Function_Merge_Entry:
 Function_Mark_Memory:	; Function 4
 	.Region equ dword [ebp+20]	; var Region : Memory_Region
 	.Start equ dword [ebp+16]	; Offset : Address
-	.Limit equ dword [ebp+12]	 ; Limit : Address
-	.Module_Idx equ dword [ebp+8]	     ; Module_Idx : Cardinal
+	.Limit equ dword [ebp+12]	; Limit : Address
+	.Module_Idx equ dword [ebp+8]	; Module_Idx : Cardinal
 
 	push ebp
 	mov ebp, esp

@@ -1,4 +1,4 @@
-; Boot2.asm - Early stage module loader
+; Boot2.asm - FAT16 Boot sector v2
 ; Written in 2012 by Congdm
 ;
 ; To the extent possible under law, the author(s) have dedicated
@@ -59,10 +59,8 @@ Begin:
 	.Found_Boot_Partition:
 	mov ax, word [bx+8]
 	mov word [Var.FirstLBA], ax
-	mov [$7E00], ax
 	mov dx, word [bx+10]
 	mov word [Var.FirstLBA+2], dx
-	mov [$7E02], dx
 
 	; Load FAT and Root dir to Memory [$1000:$0000]
 	add ax, [FAT16_BPB.RsvdSecCnt]
@@ -86,10 +84,10 @@ Begin:
 	xor bx, bx
 	int $13
 
-	mov bx, $800
+	mov bx, $7E00
 	mov si, Var.LoaderFilename
 	call Procedure_Load_File
-	jmp 0:$800
+	jmp 0:$7E00
 
 Function_LBA_to_CHS:	; Take LBA in DX AX, convert to CHS in CH DH CL
 	cmp dx, $FC
