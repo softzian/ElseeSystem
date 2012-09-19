@@ -12,22 +12,17 @@
 include 'include/Header.inc'
 include 'include/Errcode.inc'
 
+SizeOf_Region_Header = 4
+SizeOf_Memory_Entry = 12
+SizeOf_Master_Table = ($4000 - SizeOf_Region_Header)
+
 use32
 
 IMemory = $100200
 ; Function 1: Create_Region (Start, Limit : Address; Type : Cardinal)
-; Function 2: Allocate (Region : Address; var Ptr : Address; Size : Cardinal)
-; Function 3: Deallocate (Region : Address; Ptr : Address)
-; Function 4: Mark_Memory (Region : Address; Start, Limit : Address; Module_Idx : Cardinal)
-
-Const:
-	SizeOf_Region_Header = 4
-	SizeOf_Memory_Entry = 12
-	SizeOf_Master_Table = ($4000 - SizeOf_Region_Header)
-
-Error_Code:
-	REGION_SIZE_IS_NOT_LARGE_ENOUGH = -1
-	NON_POSITIVE_SIZE = -2
+; Function 2: Allocate (var Ptr : Address; Region : Address; Size : Cardinal)
+; Function 3: Deallocate (Ptr : Address; Region : Address)
+; Function 4: Mark_Memory (var Region : Memory_Region; Start, Limit : Address; Module_Idx : Cardinal)
 
 Function_Init:
 	push ebx
@@ -98,18 +93,18 @@ Function_Create_Region:  ; Function 1
 	leave
 	ret 12
 	.Error1:
-	mov eax, SUBINTERFACE_UNAVAILABLE
+	mov eax, UNSUPPORTED_FUNCTION
 	jmp .Return
 	.Error2:
-	mov eax, REGION_SIZE_IS_NOT_LARGE_ENOUGH
+	mov eax, NOT_LARGE_ENOUGH
 	jmp .Return
 	restore .Start
 	restore .Limit
 	restore .Type
 
 Function_Allocate:    ; Function 2
-	.Region equ dword [ebp+16] ; Region : Address
-	.Ptr equ dword [ebp+12] ; var Ptr : Address
+	.Ptr equ dword [ebp+16] ; var Ptr : Address
+	.Region equ dword [ebp+12] ; Region : Address
 	.Size equ dword [ebp+8] ; Size : Cardinal
 
 	push ebp
@@ -204,7 +199,7 @@ Function_Allocate:    ; Function 2
 	ret 12
 
 	.Error1:
-	mov eax, SUBINTERFACE_UNAVAILABLE
+	mov eax, UNSUPPORTED_FUNCTION
 	jmp .Return
 	.Error2:
 	mov eax, NO_FREE_MEMORY
@@ -252,8 +247,8 @@ Function_Split_Entry:
 	jmp .Return
 
 Function_Deallocate:	; Function 3
-	.Region equ dword [ebp+12] ; Region : Address
-	.Ptr equ dword [ebp+8] ; Ptr : Address
+	.Ptr equ dword [ebp+12] ; Ptr : Address
+	.Region equ dword [ebp+8] ; Region : Address
 
 	push ebp
 	mov ebp, esp
@@ -297,10 +292,10 @@ Function_Deallocate:	; Function 3
 	leave
 	ret 8
 	.Error1:
-	mov eax, SUBINTERFACE_UNAVAILABLE
+	mov eax, UNSUPPORTED_FUNCTION
 	jmp .Return
 	.Not_Found:
-	mov eax, ENTRY_NOT_FOUND
+	mov eax, MEMORY_ENTRY_NOT_FOUND
 	jmp .Return
 	restore .Ptr
 	restore .Region
@@ -473,16 +468,16 @@ Function_Mark_Memory:	; Function 4
 	leave
 	ret 16
 	.Error1:
-	mov eax, SUBINTERFACE_UNAVAILABLE
+	mov eax, UNSUPPORTED_FUNCTION
 	jmp .Return
 	.Error2:
 	mov eax, NON_POSITIVE_SIZE
 	jmp .Return
 	.Error3:
-	mov eax, ENTRY_NOT_FOUND
+	mov eax, MEMORY_ENTRY_NOT_FOUND
 	jmp .Return
 	.Error4:
-	mov eax, TABLE_FULL
+	mov eax, MASTER_TABLE_IS_FULL
 	jmp .Return
 
 	restore .Region
