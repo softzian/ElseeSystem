@@ -1,29 +1,26 @@
-Install guide
-----------------------------------------------------------------------
-
-Tools:
-	- FASM (http://flatassembler.net/)
-	- Bochs (http://bochs.sourceforge.net/)
-	- A DOS floppy disk image
-	- A virtual floppy program (I use VFD: http://vfd.sourceforge.net/)
-	- A Hex editor
+The current version is very different from the old version but the logic inside is still the same.
+I call this version 0.1, it will have new features:
+	PXE Booting
+	Code address space and Data address space is seperated
+	Unified Memory and Module manager (the System module)
+	Threading
+	Ethernet Driver (for RTL8139, still working)
 	
-1. Compile all the source with FASM.
-2. Use Bochs to create a 20 MB flat hard disk image.
-3. Boot the DOS floppy on Bochs, using FDISK and FORMAT to
-format all the hard disk image with a FAT16 partition.
-4. Use the Hex editor to copy boot2.bin (boot loader) to the
-boot sector of FAT16 partition in hard disk image (boot sector
-location in hard disk image is 7E00h if you use Bochs default
-geometry when creating hard disk image)
-5. Mount the DOS floppy image using virtual floppy program,
-copy the rest of .bin files (loader.bin, 8259A.bin, VGA.bin,
-8042.bin, Sysutils.bin, ...) to the floppy disk
-6. Run Bochs, boot the DOS floppy (be sure that you have unmounted
-the floppy image), copy all the *.bin to C:\
-7. Reset Bochs and choose booting from hard disk to test
-
-It run fine on Bochs. I didn't test it on real machine yet.
-
-If you only want to test quickly, get the pre-built image and boot
-it with Bochs.
+Install guide:
+	Get a TFTP and DHCP boot server (Tftpd32 is recommend)
+	Compile all the source file in source directory by FASM
+	Copy all binary to TFTP server root directory, config DHCP boot server to boot "Loader3.bin"
+Note: My program is developed and tested on real machine, not virtual machine. In order to
+boot this program, the virtual machine must support PXE booting.	
+	
+Booting process:
+	Loader3.bin is loaded by PXE Boot ROM
+	Loader will download the other modules
+	Switch to Protected Mode
+	Init System module, create Memory table and Module table
+	Init Interrupt module
+	Init Thread module
+	
+Module initialization process has some little different from the old version, but in essential,
+it still same. See note.txt for more detail.
+	

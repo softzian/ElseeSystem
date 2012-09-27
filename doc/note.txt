@@ -1,3 +1,5 @@
+This note now is outdated but it still has some valid information.
+
 Source files list:
 	boot2.asm	Stage 1 Boot loader for FAT16 partition (Hard disk)
 	Loader.asm	Stage 2 Module loader v1
@@ -22,7 +24,7 @@ Booting sequence:
 
 Loading module sequence:
 	1. Read the module file from disks or other storages to memory
-	2. Call the Init function of module
+	2. Call the Init function of module (stay at the top of module binary file)
 	3. The Init function do:
 		- Fill the Interface Table
 		- Initialize module
