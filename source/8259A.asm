@@ -19,44 +19,55 @@ IInterrupt = $100400
 ; Function 4: Enable_IRQ (IRQNum : Byte)
 ; Function 5: Send_EOI
 
+jmp Function_Init
+Interface:
+	.Install_ISR dd Function_Install_ISR
+	.Init_PIC dd Function_Init_PIC
+	.Mask_all_IRQ dd Function_Mask_all_IRQ
+	.Enable_IRQ dd Function_Enable_IRQ
+	.Send_EOI dd Function_Send_EOI
+
 Function_Init:
 	push ebx
 	push edi
+	push esi
 
 	mov ebx, eax
 	mov edi, IInterrupt
+	lea esi, [eax + Interface]
+	mov [fs:edi], eax
+	add edi, 4
 
-	stosd
-	lea eax, [ebx+Function_Install_ISR]
-	stosd
-	lea eax, [ebx+Function_Init_PIC]
-	stosd
-	lea eax, [ebx+Function_Mask_all_IRQ]
-	stosd
-	lea eax, [ebx+Function_Enable_IRQ]
-	stosd
-	lea eax, [ebx+Function_Send_EOI]
-	stosd
+	.Loop:
+		mov eax, [fs:esi]
+		add eax, ebx
+		mov [fs:edi], eax
 
-	add [ebx+IDTR.Base], ebx
-	lidt [ebx+IDTR]
+		add edi, 4
+		add esi, 4
+
+		cmp edi, IInterrupt + 4 * 5
+		jna .Loop
+
+	add [fs:ebx + IDTR.Base], ebx
+	lidt [fs:ebx + IDTR]
 
 	call Function_Init_PIC
 	call Function_Mask_all_IRQ
 
-	xor eax, eax
+	pop esi
 	pop edi
 	pop ebx
 	ret
 
 Function_Install_ISR:
-	.INum equ byte [ebp+12]
-	.ISR_Entry equ dword [ebp+8]
+	.INum equ byte [ebp + 12]
+	.ISR_Entry equ dword [ebp + 8]
 
 	enter 0, 0
 	push ebx
 
-	mov ebx, [IInterrupt]
+	mov ebx, [fs:IInterrupt]
 	add ebx, IDT
 	xor eax, eax
 	mov al, .INum
@@ -64,13 +75,13 @@ Function_Install_ISR:
 	add ebx, eax
 
 	mov eax, .ISR_Entry
-	mov [ebx], ax
-	mov byte [ebx+5], 10001110b
+	mov [fs:ebx], ax
+	mov byte [fs:ebx + 5], 10001110b
 	shr eax, 16
-	mov [ebx+6], ax
+	mov [fs:ebx + 6], ax
 
-	mov ebx, [IInterrupt]
-	lidt [ebx+IDTR]
+	mov ebx, [fs:IInterrupt]
+	lidt [fs:ebx + IDTR]
 
 	xor eax, eax
 	pop ebx
@@ -104,12 +115,12 @@ Function_Init_PIC:
 Function_Mask_all_IRQ:
 	push ebx
 
-	mov ebx, [IInterrupt]
+	mov ebx, [fs:IInterrupt]
 	mov al, 11111011b
-	mov [ebx+Static.IRQMask1], al
+	mov [fs:ebx + Static.IRQMask1], al
 	out $21, al
 	mov al, 11111111b
-	mov [ebx+Static.IRQMask2], al
+	mov [fs:ebx + Static.IRQMask2], al
 	out $A1, al
 
 	pop ebx
@@ -117,19 +128,19 @@ Function_Mask_all_IRQ:
 	ret
 
 Function_Enable_IRQ:
-	.IRQNum equ byte [ebp+8]
+	.IRQNum equ byte [ebp + 8]
 
 	enter 0, 0
 	push ebx
 	push ecx
 
-	mov ebx, [IInterrupt]
+	mov ebx, [fs:IInterrupt]
 	xor ecx, ecx
 	mov cl, .IRQNum
 
-	mov ax, word [ebx+Static.IRQMask1]
+	mov ax, word [fs:ebx + Static.IRQMask1]
 	btr ax, cx
-	mov word [ebx+Static.IRQMask1], ax
+	mov word [fs:ebx + Static.IRQMask1], ax
 
 	out $21, al
 	mov al, ah
