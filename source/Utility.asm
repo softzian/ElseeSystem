@@ -14,12 +14,12 @@ include 'include\Header.inc'
 include 'include\errcode.inc'
 
 IUtility = $100A00
-; Function 1: Cardinal_to_HexStr (Num : Byte; var HexStr : String; Count : Word)
+; Function 1: Cardinal_to_HexStr (Num : Cardinal; var HexStr : Old_string; Count : Word)
 ; Function 2: Write_Cardinal_Hex (Num : LongWord)
 ; Function 3: Write_Char (Ch : Char)
-; Function 4: Write_String (var Str : String)
+; Function 4: Write_String (var Str : Old_string)
 
-; Function 11: HexStr_to_Cardinal (var Num : Cardinal; var HexStr : String; Word_size : Byte)
+; Function 11: HexStr_to_Cardinal (var Num : Cardinal; var HexStr : Old_string; Word_size : Byte)
 ; Function 12: HexChar_to_Byte (var Num : Byte; HexChar : Char)
 
 Error_Code:
@@ -152,7 +152,7 @@ Function_Write_Cardinal_Hex:
 	.Num equ dword [ebp + 8]
 	._Num equ dword [esp + 4]
 	; Local Var:
-	.Str equ dword [ebp - 10] ; Str : String[8]
+	.Str equ dword [ebp - 10] ; Str : Old_string[8]
 
 	mov eax, ._Num
 	test eax, eax
@@ -214,7 +214,7 @@ Function_Write_String:
 
 Function_HexStr_to_Cardinal:
 	.Num equ dword [ebp + 13] ; var Num : Cardinal
-	.HexStr equ dword [ebp + 9] ; var HexStr : String
+	.HexStr equ dword [ebp + 9] ; var HexStr : Old_string
 	.Word_size equ byte [ebp + 8] ; Word_size : Byte
 	._HexStr equ dword [esp + 5]
 	._Word_size equ byte [esp + 4]

@@ -13,6 +13,9 @@ IVideo.Set_Cursor = IVideo + 12
 IVideo.Get_Cursor = IVideo + 16
 IVideo.New_Line = IVideo + 20
 IVideo.Move_Cursor = IVideo + 24
+IVideo.Write = IVideo + 28
+IVideo.Switch_Window = IVideo + 32
+IVideo.Blit_text = IVideo + 36
 
 ISystem = $100000
 ISystem.Create_Region = ISystem + 4
@@ -25,6 +28,10 @@ ISystem.Deallocate_Code = ISystem + 28
 ISystem.Mark_Code = ISystem + 32
 ISystem.Set_Active_Module = ISystem + 36
 ISystem.Get_Active_Module = ISystem + 40
+ISystem.Create_Message_Queue = ISystem + 44
+ISystem.Send_Message = ISystem + 48
+ISystem.Get_Message = ISystem + 52
+ISystem.Copy_code_to_data = ISystem + 56
 
 IUtility = $100A00
 IUtility.Cardinal_to_HexStr = IUtility + 4
@@ -45,3 +52,12 @@ IThread = $100600
 IThread.New_Thread = IThread + 4
 IThread.Start = IThread + 8
 IThread.Yield = IThread + 12
+
+IConvert = $100C00
+IConvert.UTF16_to_raw_UTF32 = IConvert + 4
+
+IConsole = $100E00
+IConsole.Alloc_console = IConsole + 4
+IConsole.Write_console = IConsole + 8
+IConsole.Read_console = IConsole + 12
+IConsole.Switch_console = IConsole + 16

@@ -98,6 +98,8 @@ Function_Init:
 		cmp edi, SizeOf_Thread_Table
 		jb .Loop2
 
+	cli
+
 	; Install ISR for IRQ 0
 	mov [esp - 1], byte $20
 	dec esp
@@ -108,6 +110,8 @@ Function_Init:
 	mov [esp - 1], byte 0
 	dec esp
 	invoke IInterrupt.Enable_IRQ
+
+	sti
 
 	pop esi
 	pop edi
@@ -282,9 +286,9 @@ Function_Yield:        ; Function 3
 
 	mov eax, [esp + 4]
 	mov [fs:ebx + Var.EIP], eax
-	pop ebx
-	add esp, 4
-	jmp Procedure_Switch_Context
+
+	lea eax, [ebx + Procedure_Switch_Context]
+	mov [esp + 4], eax
 
 	.Return:
 	pop ebx

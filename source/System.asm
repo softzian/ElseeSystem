@@ -28,6 +28,12 @@ ISystem = $100000
 ; Function 9: Set_Active_Module (ModuleIdx : Cardinal)
 ; Function 10: Get_Active_Module (var ModuleIdx : Cardinal)
 
+; Function 11: Create_Message_Queue (out Queue : Address; Size : Cardinal)
+; Function 12: Send_Message (Queue : Address; in Msg : Message)
+; Function 13: Get_Message (Queue : Address; out Msg : Message)
+
+; Function 14: Copy_code_to_data (Src, Dst : Address; Count : Cardinal)
+
 ; Type
 ;       MemoryEntry_Type = Record
 ;               ModuleIdx : Cardinal
@@ -48,7 +54,9 @@ Const:
 
 Error_Code:
 	REGION_SIZE_IS_NOT_LARGE_ENOUGH = -1
-	NON_POSITIVE_SIZE = -2
+	NON_POSITIVE_SIZE = INVALID_SIZE
+	MESSAGE_QUEUE_FULL = -2
+	MESSAGE_QUEUE_EMPTY = -3
 
 jmp Function_Init
 Interface:
@@ -64,6 +72,12 @@ Interface:
 
 	.Set_Active_Module dd Function_Set_Active_Module
 	.Get_Active_Module dd Function_Get_Active_Module
+
+	dd Function_Create_Message_Queue
+	dd Function_Send_Message
+	dd Function_Get_Message
+
+	dd Function_Copy_code_to_data
 
 Var:
 	.Active_Module dd 0
@@ -87,7 +101,7 @@ Function_Init:
 		add edi, 4
 		add esi, 4
 
-		cmp edi, ISystem + 4 * 10
+		cmp edi, ISystem + 4 * 14
 		jna .Loop
 
 	pop esi
@@ -961,3 +975,213 @@ Function_Get_Active_Module:	; Function 10
 	leave
 	ret 4
 	restore .ModuleIdx
+
+Function_Create_Message_Queue:	; Function 11
+	.Queue equ dword [ebp + 12]	; out Queue : Address
+	.Size equ dword [ebp + 8]	; Size : Cardinal
+
+	push ebp
+	mov ebp, esp
+	push ebx
+
+	mov ebx, .Queue
+	mov eax, .Size
+
+	test eax, eax
+	jz .Error1
+
+	add eax, 2
+	shl eax, 4	; Size of whole structure
+
+	push 0
+	push ebx
+	push eax
+	call Function_Allocate
+
+	test eax, eax
+	jnz .Error2
+
+	mov ebx, [ebx]
+
+	add eax, ebx
+	mov [ebx], eax	; Limit
+	mov [ebx + 4], dword 0	; Lock
+	lea eax, [ebx + 16]
+	mov [ebx + 8], eax	; Read pointer
+	mov [ebx + 12], eax	; Write pointer
+
+	.Return:
+	pop ebx
+	leave
+	ret 8
+	.Error1:
+	mov eax, INVALID_SIZE
+	jmp .Return
+	.Error2:
+	mov eax, CANNOT_ALLOCATE
+	jmp .Return
+
+	restore .Queue
+	restore .Size
+
+Function_Send_Message:		; Function 12
+	.Queue equ dword [ebp + 12]	; Queue : Address
+	.Msg equ dword [ebp + 8]	; in Msg : Message
+
+	push ebp
+	mov ebp, esp
+	push ebx
+	push ecx
+	push edx
+	push esi
+
+	mov ebx, .Queue
+
+	; Get lock
+	.Spinlock:
+		lock bts dword [ebx + 4], 0
+		jnc .Next1
+		invoke IThread.Yield
+		jmp .Spinlock
+
+	.Next1:
+	mov eax, [ebx + 12]	; Write pointer
+
+	add eax, 16
+	cmp eax, [ebx]
+	jb .Next2
+	lea eax, [ebx + 16]
+
+	.Next2:
+	cmp eax, [ebx + 8]
+	je .Error1		; Queue is full
+
+	; Copy message to queue
+	mov edx, [ebx + 12]
+	mov esi, .Msg
+
+	mov ecx, [esi]
+	mov [edx], ecx
+	mov ecx, [esi + 4]
+	mov [edx + 4], ecx
+	mov ecx, [esi + 8]
+	mov [edx + 8], ecx
+	mov ecx, [esi + 12]
+	mov [edx + 12], ecx
+
+	; Update write pointer
+	mov [ebx + 12], eax
+
+	xor eax, eax
+
+	.Release_lock:
+	lock btr dword [ebx + 4], 0
+	.Return:
+	pop esi
+	pop edx
+	pop ecx
+	pop ebx
+	leave
+	ret 8
+
+	.Error1:
+	mov eax, MESSAGE_QUEUE_FULL
+	jmp .Release_lock
+
+	restore .Queue
+	restore .Msg
+
+Function_Get_Message:	       ; Function 13
+	.Queue equ dword [ebp + 12]	; Queue : Address
+	.Msg equ dword [ebp + 8]	; in Msg : Message
+
+	push ebp
+	mov ebp, esp
+	push ebx
+	push ecx
+	push edi
+
+	mov ebx, .Queue
+
+	; Get lock
+	.Spinlock:
+		lock bts dword [ebx + 4], 0
+		jnc .Next1
+		invoke IThread.Yield
+		jmp .Spinlock
+
+	.Next1:
+	mov eax, [ebx + 8]	; Read pointer
+
+	cmp eax, [ebx + 12]
+	je .Error1		; Queue is empty
+
+	; Get message from queue
+	mov edi, .Msg
+	mov ecx, [eax]
+	mov [edi], ecx
+	mov ecx, [eax + 4]
+	mov [edi + 4], ecx
+	mov ecx, [eax + 8]
+	mov [edi + 8], ecx
+	mov ecx, [eax + 12]
+	mov [edi + 12], ecx
+
+	; Increase read pointer
+	add eax, 16
+	cmp eax, [ebx]
+	jb .Finish
+	lea eax, [ebx + 16]
+
+	.Finish:
+	mov [ebx + 8], eax
+	xor eax, eax
+
+	.Release_lock:
+	lock btr dword [ebx + 4], 0
+	.Return:
+	pop edi
+	pop ecx
+	pop ebx
+	leave
+	ret 8
+
+	.Error1:
+	mov eax, MESSAGE_QUEUE_EMPTY
+	jmp .Release_lock
+
+	restore .Queue
+	restore .Msg
+
+Function_Copy_code_to_data:	; Function 14
+	.Src equ dword [ebp + 16]	; Src : Address
+	.Dst equ dword [ebp + 12]	; Dst : Address
+	.Count equ dword [ebp + 8]	; Count : Cardinal
+
+	push ebp
+	mov ebp, esp
+	push ecx
+	push esi
+	push edi
+
+	mov edi, .Dst
+	mov esi, .Src
+	mov ecx, .Count
+
+	.Loop:
+		mov al, [fs:esi]
+		mov [ds:edi], al
+		inc esi
+		inc edi
+		loop .Loop
+
+	.Return:
+	pop edi
+	pop esi
+	pop ecx
+	leave
+	ret 12
+
+	restore .Src
+	restore .Dst
+	restore .Count

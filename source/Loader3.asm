@@ -49,6 +49,24 @@ PXE_Loader:
 	test ax, ax
 	jnz Abort
 
+	push Var.Keyboard_Module
+	push dword $15000
+	call Function_Download_File
+	test ax, ax
+	jnz Abort
+
+	push Var.Console_Module
+	push dword $16000
+	call Function_Download_File
+	test ax, ax
+	jnz Abort
+
+	push Var.Convert_Module
+	push dword $17000
+	call Function_Download_File
+	test ax, ax
+	jnz Abort
+
 	call Procedure_PXE_Finish
 
 Switch_to_Protected_Mode:
@@ -71,8 +89,13 @@ Var:
 	.Video_Module db 7,0,'VGA.bin'
 	.Utility_Module db 11,0,'Utility.bin'
 	.Thread_Module db 10,0,'Thread.bin'
+	.Keyboard_Module db 8,0,'8042.bin'
+	.Console_Module db 11,0,'Console.bin'
+	.Convert_Module db 11,0,'Convert.bin'
 
 	.Text db 7,0,'Success'
+	.UTF16_Str du 12,0, 24,0, 24,0, 'Hello World!'
+	.Console dd 0
 
 Halt:
 	hlt
@@ -166,19 +189,46 @@ Begin:
 
 	call Init_Module
 
-	call Init_Memory_Table
-	call Init_Thread
-	call Print_Memory_Table
-	call Print_Thread_Table
+	;call Init_Thread
+	;call Print_Memory_Table
+	;call Print_Thread_Table
 
-	push 1
-	invoke IThread.Start
-	push 2
-	invoke IThread.Start
+	cli
 
-	invoke IUtility.Write_Cardinal_Hex
+	push Var.UTF16_Str
+	push $FFFF0000
+	push 36
+	invoke ISystem.Copy_code_to_data
 
-	sti
+	sub esp, 4
+	mov eax, esp
+	push eax
+	invoke IConsole.Alloc_console
+	pop eax
+
+	mov [fs:Var.Console], eax
+
+	;push dword ebx
+	;push $FFFF0000
+	;mov [esp - 2], word 8
+	;sub esp, 2
+	;invoke IUtility.Cardinal_to_HexStr
+	;mov ecx, 0
+	;.Loop_n:
+	;        mov al, [$FFFF0002 + ecx]
+	;        mov [fs:$B8000 + ecx * 2], al
+	;        mov [fs:$B8000 + ecx * 2 + 1], byte 1111b
+	;        inc ecx
+	;        cmp ecx, 8
+	;        jb .Loop_n
+	;hlt
+
+	push dword [fs:Var.Console]
+	invoke IConsole.Switch_console
+
+	push dword [fs:Var.Console]
+	push $FFFF0000
+	invoke IConsole.Write_console
 
 Halt32:
 	hlt
@@ -207,7 +257,7 @@ Thread_2:
 	jmp Thread_2
 
 Init_Module:
-	mov eax, $10000
+	mov eax, $10000 	; System module
 	call eax
 
 	push $1FFFFF
@@ -237,14 +287,28 @@ Init_Module:
 	push $14FFF
 	invoke ISystem.Mark_Code
 
+	push $15000
+	push $15FFF
+	invoke ISystem.Mark_Code
+
 	push $7000
 	invoke ISystem.Set_Active_Module
+
+	call Init_Memory_Table
+
+	mov eax, $13000 	; Interrupt
+	call eax
+
+	;mov eax, $14000         ; Thread
+	;call eax
 
 	mov eax, $11000
 	call eax
 	mov eax, $12000
 	call eax
-	mov eax, $13000
+	mov eax, $16000
+	call eax
+	mov eax, $17000
 	call eax
 
 	ret
@@ -328,9 +392,6 @@ Print_Memory_Table:
 	ret
 
 Init_Thread:
-	mov eax, $14000
-	call eax
-
 	sub esp, 4
 	mov eax, esp
 	push $7000
@@ -340,6 +401,9 @@ Init_Thread:
 	invoke IThread.New_Thread
 	pop eax
 
+	push eax
+	invoke IThread.Start
+
 	sub esp, 4
 	mov eax, esp
 	push $7000
@@ -348,6 +412,9 @@ Init_Thread:
 	push eax
 	invoke IThread.New_Thread
 	pop eax
+
+	push eax
+	invoke IThread.Start
 
 	ret
 
