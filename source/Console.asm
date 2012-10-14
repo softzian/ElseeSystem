@@ -15,16 +15,9 @@ use32
 
 IConsole = $100E00
 ; Function 1: Alloc_console (out Console : Handle_type)
-; Function 2: Write_console (Console : Handle_type; in Str : String)
-; Function 3: Read_console (Console : Handle_type; out Str : String; Max_size : Cardinal)
+; Function 2: Write_console (Console : Handle_type; in Str : raw_UTF32_string; Count : Cardinal)
+; Function 3: Read_console (Console : Handle_type; out Str : raw_UTF32_string; Max_count : Cardinal)
 ; Function 4: Switch_console (Console : Handle_type)
-
-Const:
-	NumOf_Windows = 2
-	Write_Flag = 0
-Error_Code:
-	CANNOT_ALLOC_MEMORY = -1
-	STRING_LENGTH_IS_ZERO = -2
 
 jmp Function_Init
 Interface:
@@ -33,8 +26,17 @@ Interface:
 	dd 0 ;Function_Read_console
 	dd Function_Switch_console
 
+Const:
+	NumOf_Windows = 2
+	Write_Flag = 0
+Error_Code:
+	CANNOT_ALLOC_MEMORY = -1
+	STRING_LENGTH_IS_ZERO = -2
+	CANNOT_ALLOC_QUEUE = -3
+
 Var:
 	.Active_console dd 0
+	.Queue dd 0
 	.Lock dd 0
 
 Function_Init:
@@ -59,58 +61,124 @@ Function_Init:
 		cmp edi, IConsole + 4 * 4
 		jna .Loop
 
+	sub esp, 4
+	mov eax, esp
+	push eax
+	push 1024
+	invoke ISystem.Create_Message_Queue
+	pop eax
+
+	mov [fs:ebx + Var.Queue], eax
+
+	push eax
+	invoke IKeyboard.Set_target_queue
+
+	sub esp, 4
+	mov eax, esp
+	push ebx	; ModuleIdx
+	add ebx, Main_thread
+	push ebx	; Start_point
+	push $2000	; Stack_size
+	push eax
+	invoke IThread.New_Thread
+	pop eax
+
 	pop esi
 	pop edi
 	pop ebx
 	ret
+
+Main_thread:
+	mov ebp, esp
+	sub esp, 16
+	mov ebx, [fs:IConsole]
+	xor ecx, ecx
+
+	.Message_loop:
+	lea eax, [ebp - 16]
+	push dword [fs:ebx + Var.Queue]
+	push eax
+	invoke ISystem.Get_Message
+
+	test eax, eax
+	jnz .Wait
+
+	push dword [fs:ebx + Var.Active_console]
+	lea eax, [ebp - 16]
+	push eax
+	push 1
+	call Function_Write_console
+
+	.Wait:
+	invoke IThread.Yield
+	jmp .Message_loop
 
 Function_Alloc_console: 	; Function 1
 	.Console equ dword [ebp + 8]	; out Console : Handle_type
 
 	push ebp
 	mov ebp, esp
+	push ebx
+
+	push .Console
+	push 1024
+	invoke ISystem.Create_Message_Queue
+
+	test eax, eax
+	jnz .Error2
+
+	mov ebx, .Console
+	mov ebx, [ebx]
 
 	push 0
 	push .Console
-	push (2000 * 8 + 4 * 4)
+	push (2000 * 8 + 4 * 6)
 	invoke ISystem.Allocate
 
 	test eax, eax
-	jne .Error1
+	jnz .Error1
 
 	mov eax, .Console
 	mov eax, [eax]
-	mov [eax], dword 0
-	mov [eax + 8], dword 0
-	mov [eax + 12], dword $3E007FFF
-	mov [eax + 16], dword 2000
-	mov [eax + 20], word 80
-	mov [eax + 22], word 25
+	mov [eax], dword 0	; Lock
+	mov [eax + 4], ebx	; Message queue
+	mov [eax + 8], dword 0	; Cursor
+	mov [eax + 12], dword $3E007FFF ; Default attribute
+	mov [eax + 16], dword 2000	; Size in character
+	mov [eax + 20], word 80 	; Width
+	mov [eax + 22], word 25 	; Height
 
 	xor eax, eax
 
 	.Return:
+	pop ebx
 	leave
 	ret 4
 	.Error1:
 	mov eax, CANNOT_ALLOC_MEMORY
 	jmp .Return
+	.Error2:
+	mov eax, CANNOT_ALLOC_QUEUE
+	jmp .Return
 
 	restore .Console
 
 Function_Write_console: 	; Function 2
-	.Console equ dword [ebp + 12]	; Console : Handle_type
-	.Str equ dword [ebp + 8]	; in Str : String
+	.Console equ dword [ebp + 16]	; Console : Handle_type
+	.Str equ dword [ebp + 12]	; in Str : raw_UTF32_string
+	.Count equ dword [ebp + 8]	; Count : Cardinal
 
 	push ebp
 	mov ebp, esp
 	push ebx
 	push ecx
+	push edx
 	push esi
+	push edi
 
-	mov esi, .Str
-	cmp [esi], dword 0
-	je .Error1
+	mov edx, .Count
+	test edx, edx
+	jz .Error1
 
 	mov ebx, .Console
 
@@ -121,11 +189,21 @@ Function_Write_console: 	; Function 2
 		jmp .Spinlock
 
 	.Begin:
-	call Procedure_Convert	; parameters are ebx and esi
-	test esi, esi
-	jz .Error2
+	xor ecx, ecx
+	mov esi, .Str
+	mov eax, [ebx + 8]
+	lea edi, [ebx + 24 + eax * 8]
+	mov ebx, [ebx + 12]
+	.Loop:
+		mov eax, [esi + ecx * 4]
+		mov [edi + ecx * 8], eax
+		mov [edi + ecx * 8 + 4], ebx
+		inc ecx
+		cmp ecx, edx
+		jb .Loop
 
 	; Check if this console is active console
+	mov ebx, .Console
 	mov eax, [fs:IConsole]
 	cmp ebx, [fs:eax + Var.Active_console]
 	jne .Done
@@ -134,22 +212,23 @@ Function_Write_console: 	; Function 2
 	lea eax, [ebx + 24 + ecx * 8]
 	push eax
 	push ecx
-	push dword [esi]
+	push edx
 	invoke IVideo.Blit_text
 
 	; Update cursor
-	mov eax, [esi]
-	add [ebx + 8], eax
+	add [ebx + 8], edx
 
 	.Done: xor eax, eax
 	.Unlock: lock btr dword [ebx], 0
 
 	.Return:
+	pop edi
 	pop esi
+	pop edx
 	pop ecx
 	pop ebx
 	leave
-	ret 8
+	ret 12
 	.Error1:
 	mov eax, STRING_LENGTH_IS_ZERO
 	jmp .Return

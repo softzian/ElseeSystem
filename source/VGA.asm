@@ -26,13 +26,6 @@ IVideo = $100800
 
 ; Function 9: Blit_text (in Src : Buffer; Cursor, Count : Cardinal)
 
-Const:
-	NumOf_Windows = 2
-	Write_Flag = 0
-Error_Code:
-	INVALID_COUNT = -1
-	INVALID_WINDOW_IDX = -2
-
 jmp Function_Init
 Interface:
 	dd Function_Write_Telex
@@ -46,6 +39,13 @@ Interface:
 	dd Function_Switch_Window
 
 	dd Function_Blit_text
+
+Const:
+	NumOf_Windows = 2
+	Write_Flag = 0
+Error_Code:
+	INVALID_COUNT = -1
+	INVALID_WINDOW_IDX = -2
 
 Function_Init:
 	push ebx
@@ -444,10 +444,10 @@ Function_Blit_text:
 	mov ecx, .Count
 	xor esi, esi
 	.Loop:
-		mov eax, [ebx + edx * 8]
+		mov eax, [ebx]
 		mov [fs:$B8000 + edx * 2], al
 
-		mov esi, [ebx + edx * 8 + 4]
+		mov esi, [ebx + 4]
 		mov eax, esi
 		call Function_15bit_RGB_to_4bit_RGBI
 		mov edi, eax
@@ -460,8 +460,11 @@ Function_Blit_text:
 		mov [fs:$B8000 + edx * 2 + 1], al
 
 		inc edx
-		loop .Loop
+		add ebx, 8
+		dec ecx
+		jnz .Loop
 
+	xor eax, eax
 	.Return:
 	pop edi
 	pop esi

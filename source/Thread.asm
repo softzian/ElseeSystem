@@ -47,7 +47,6 @@ Error_Code:
 	ZERO_MODULE_INDEX = -1
 	CAN_NOT_CREATE_STACK = -2
 
-
 jmp Function_Init
 Interface:
 	.New_Thread dd Function_New_Thread
@@ -106,10 +105,6 @@ Function_Init:
 	lea eax, [ebx + Procedure_IRQ0]
 	push eax
 	invoke IInterrupt.Install_ISR
-
-	mov [esp - 1], byte 0
-	dec esp
-	invoke IInterrupt.Enable_IRQ
 
 	sti
 

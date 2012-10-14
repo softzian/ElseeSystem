@@ -6,6 +6,33 @@ macro invoke x
 	call dword [cs:x]
 }
 
+macro print x
+{
+	push x
+	push $FFFE0000
+	mov [esp - 2], word 8
+	sub esp, 2
+	invoke IUtility.Cardinal_to_HexStr
+	xor ecx, ecx
+	@@:
+		mov al, [$FFFE0002 + ecx]
+		mov [fs:$B8000 + ecx * 2], al
+		mov [fs:$B8000 + ecx * 2 + 1], byte 1111b
+		inc ecx
+		cmp ecx, 8
+		jb @b
+	hlt
+}
+
+macro print2 x
+{
+	push x
+	invoke IUtility.Write_Cardinal_Hex
+	mov [esp - 1], byte ' '
+	dec esp
+	invoke IUtility.Write_Char
+}
+
 IVideo = $100800
 IVideo.Write_Telex = IVideo + 4
 IVideo.Clear_Screen = IVideo + 8
@@ -32,6 +59,9 @@ ISystem.Create_Message_Queue = ISystem + 44
 ISystem.Send_Message = ISystem + 48
 ISystem.Get_Message = ISystem + 52
 ISystem.Copy_code_to_data = ISystem + 56
+
+IKeyboard = $100200
+IKeyboard.Set_target_queue = IKeyboard + 4
 
 IUtility = $100A00
 IUtility.Cardinal_to_HexStr = IUtility + 4

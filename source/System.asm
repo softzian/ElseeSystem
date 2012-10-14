@@ -992,6 +992,7 @@ Function_Create_Message_Queue:	; Function 11
 
 	add eax, 2
 	shl eax, 4	; Size of whole structure
+	mov .Size, eax
 
 	push 0
 	push ebx
@@ -1002,6 +1003,7 @@ Function_Create_Message_Queue:	; Function 11
 	jnz .Error2
 
 	mov ebx, [ebx]
+	mov eax, .Size
 
 	add eax, ebx
 	mov [ebx], eax	; Limit
@@ -1010,6 +1012,7 @@ Function_Create_Message_Queue:	; Function 11
 	mov [ebx + 8], eax	; Read pointer
 	mov [ebx + 12], eax	; Write pointer
 
+	xor eax, eax
 	.Return:
 	pop ebx
 	leave
@@ -1036,6 +1039,12 @@ Function_Send_Message:		; Function 12
 	push esi
 
 	mov ebx, .Queue
+
+	print2 dword [ebx]
+	print2 dword [ebx + 4]
+	print2 dword [ebx + 8]
+	print2 dword [ebx + 12]
+	invoke IVideo.New_Line
 
 	; Get lock
 	.Spinlock:

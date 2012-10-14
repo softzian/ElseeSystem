@@ -17,24 +17,56 @@ IKeyboard = $100200
 ; Function 1: Init_Keyboard
 ; Function 2: Read_Keyboard_Buffer (var Ch : Char)
 ; Function 3: Clear_Keyboard_Buffer
+; Function 4: Set_target_queue (Queue : Address)
 
+jmp Function_Init
+Interface:
+	dd Function_Set_target_queue
+
+Virtual_Codes:
+	VK_LCTRL = $E500
+	VK_RCTRL = $E501
+	VK_LALT = $E502
+	VK_RALT = $E503
+	VK_LSHIFT = $E504
+	VK_RSHIFT = $E505
+	VK_F1 = $E506
+	VK_F2 = $E507
+	VK_F3 = $E508
+	VK_F4 = $E509
+	VK_F5 = $E50A
+	VK_F6 = $E50B
+	VK_F7 = $E50C
+	VK_F8 = $E50D
+	VK_F9 = $E50E
+	VK_F10 = $E50F
+	VK_F11 = $E510
+	VK_F12 = $E511
 Error_Code:
 	BUFFER_EMPTY = -1
 	INVALID_COUNT = -2
 
 Function_Init:
 	push ebx
+	push esi
 	push edi
 
 	mov ebx, eax
 	mov edi, IKeyboard
+	lea esi, [eax + Interface]
 	mov [fs:edi], eax
-	lea eax, [ebx+Function_Init_Keyboard]
-	mov [fs:edi+4], eax
-	lea eax, [ebx+Function_Read_Keyboard_Buffer]
-	mov [fs:edi+8], eax
-	lea eax, [ebx+Function_Clear_Keyboard_Buffer]
-	mov [fs:edi+12], eax
+	add edi, 4
+
+	.Loop:
+		mov eax, [fs:esi]
+		add eax, ebx
+		mov [fs:edi], eax
+
+		add edi, 4
+		add esi, 4
+
+		cmp edi, IKeyboard + 4 * 1
+		jna .Loop
 
 	cli
 
@@ -42,7 +74,7 @@ Function_Init:
 
 	dec esp
 	mov byte [esp], $21
-	lea eax, [ebx+Procedure_IRQ1]
+	lea eax, [ebx + Procedure_IRQ1]
 	push eax
 	call dword [fs:IInterrupt.Install_ISR]
 
@@ -52,7 +84,7 @@ Function_Init:
 
 	sti
 
-	lea eax, [ebx+Keyboard_Buffer]
+	lea eax, [ebx + Keyboard_Buffer]
 	push eax
 	push 1024
 	call Function_Create_Ring_Buffer
@@ -69,6 +101,7 @@ Function_Init:
 
 	xor eax, eax
 	pop edi
+	pop esi
 	pop ebx
 	ret
 
@@ -160,7 +193,7 @@ Function_Translate_Scancode:
 		._E0:
 		cmp al, $E0
 		jne ._Shift
-		bts word [fs:ebx + Var.Flag], Escape_bit
+		bts word [fs:ebx + Var.Flag], Extended_bit
 		jmp .End_Case_Do_Nothing
 
 		._Shift:
@@ -182,7 +215,7 @@ Function_Translate_Scancode:
 		; Scancode after release code is ignored
 		btr word [fs:ebx + Var.Flag], Release_bit
 		setc ah
-		btr word [fs:ebx + Var.Flag], Escape_bit
+		btr word [fs:ebx + Var.Flag], Extended_bit
 		setc bl
 		or ah, bl
 		cmp ah, 1
@@ -266,8 +299,7 @@ Function_Ring_Buffer_Read:
 
 	.j1: mov [fs:ebx + 4], eax
 	mov al, [fs:eax]
-
-	xor ah, ah
+	and eax, $FF
 	ret
 	.Buffer_Empty:
 	mov ah, -1
@@ -316,6 +348,23 @@ Function_Clear_Ring_Buffer:
 	mov [fs:ebx + 4], eax
 	ret
 
+Function_Set_target_queue:
+	.Queue equ dword [ebp + 8]	; Queue : Address
+
+	push ebp
+	mov ebp, esp
+	push ebx
+
+	mov ebx, [fs:IKeyboard]
+	mov eax, .Queue
+	mov [fs:ebx + Var.Target_queue], eax
+	xor eax, eax
+
+	pop ebx
+	leave
+	ret 4
+	restore .Queue
+
 Procedure_IRQ1:
 	pusha
 
@@ -329,7 +378,7 @@ Procedure_IRQ1:
 	in al, $60
 
 	.Next2:
-	lea ecx, [ebx+Keyboard_Buffer]
+	lea ecx, [ebx + Keyboard_Buffer]
 	push ecx
 	dec esp
 	mov [esp], al
@@ -353,23 +402,208 @@ Processing_thread:
 	test ah, ah
 	jnz .Buffer_is_empty
 
+	.Translate:
+	xor ecx, ecx
 	mov ebx, [fs:IKeyboard]
-	call Function_Translate_Scancode
-	jmp Processing_thread
+	mov cx, [fs:ebx + US_Layout + eax * 2]
+
+	test ecx, ecx
+	jz .Set_flag
+
+	.Prepare_message:
+	sub esp, 16
+	mov [esp], ecx
+	mov [esp + 4], eax
+	mov edx, [fs:ebx + Var.Flag]
+	mov [esp + 8], edx
+	mov edi, eax
+	mov esi, esp
+
+	.Send_message:
+	push dword [fs:ebx + Var.Target_queue]
+	push esi
+	invoke ISystem.Send_Message
+
+	test eax, eax
+	jnz .Resend
+
+	add esp, 16
+	mov eax, edi
+	jmp .Set_flag
+
+	.Resend:
+	invoke IThread.Yield
+	jmp .Send_message
+
+	.Set_flag:
+	bt dword [fs:ebx + Var.Flag], Release_bit
+	jc .Release_state
+
+	.Press_state:
+		cmp al, $F0
+		je .F0
+		cmp ecx, VK_LSHIFT
+		je .Press_shift
+		cmp ecx, VK_RSHIFT
+		je .Press_shift
+		jmp Processing_thread
+
+		.F0:
+		bts dword [fs:ebx + Var.Flag], Release_bit
+		jmp Processing_thread
+		.Press_shift:
+		bts dword [fs:ebx + Var.Flag], Shift_bit
+		jmp Processing_thread
+
+	.Release_state:
+		btr dword [fs:ebx + Var.Flag], Release_bit
+		cmp ecx, VK_LSHIFT
+		je .Release_shift
+		cmp ecx, VK_RSHIFT
+		je .Release_shift
+		jmp Processing_thread
+
+		.Release_shift:
+		btr dword [fs:ebx + Var.Flag], Shift_bit
+		jmp Processing_thread
 
 	.Buffer_is_empty:
 	invoke IThread.Yield
-	hlt
 	jmp Processing_thread
 
 Const:
 	Release_bit = 0
 	Shift_bit = 1
-	Escape_bit = 2
+	Extended_bit = 2
 
 Var:
-	.Flag dw 0
-	Keyboard_Buffer db (1024+13) dup 0
+	.Flag dd 0
+	.Target_queue dd 0
+Keyboard_Buffer db (1024+13) dup 0
+
+US_Layout:
+	._0 dw 0
+	._1 dw VK_F9
+	._2 dw 0
+	._3 dw VK_F5
+	._4 dw VK_F3
+	._5 dw VK_F1
+	._6 dw VK_F2
+	._7 dw VK_F12
+	._8 dw 0
+	._9 dw VK_F10
+	._A dw VK_F8
+	._B dw VK_F6
+	._C dw VK_F4
+	._D dw $09 ; Tab
+	._E dw '`' ; `
+	._F dw 0
+
+	._10 dw 0
+	._11 dw VK_LALT
+	._12 dw VK_LSHIFT
+	._13 dw 0
+	._14 dw VK_LCTRL
+	._15 dw 'q' ; q
+	._16 dw '1' ; 1
+	._17 dw 0
+	._18 dw 0
+	._19 dw 0
+	._1A dw 'z' ; z
+	._1B dw 's' ; s
+	._1C dw 'a' ; a
+	._1D dw 'w' ; w
+	._1E dw '2' ; 2
+	._1F dw 0
+
+	._20 dw 0
+	._21 dw 'c' ; c
+	._22 dw 'x' ; x
+	._23 dw 'd' ; d
+	._24 dw 'e' ; e
+	._25 dw '4' ; 4
+	._26 dw '3' ; 3
+	._27 dw 0
+	._28 dw 0
+	._29 dw ' ' ; Space
+	._2A dw 'v' ; v
+	._2B dw 'f' ; f
+	._2C dw 't' ; t
+	._2D dw 'r' ; r
+	._2E dw '5' ; 5
+	._2F dw 0
+
+	._30 dw 0
+	._31 dw 'n' ; n
+	._32 dw 'b' ; b
+	._33 dw 'h' ; h
+	._34 dw 'g' ; g
+	._35 dw 'y' ; y
+	._36 dw '6' ; 6
+	._37 dw 0
+	._38 dw 0
+	._39 dw 0
+	._3A dw 'm' ; m
+	._3B dw 'j' ; j
+	._3C dw 'u' ; u
+	._3D dw '7' ; 7
+	._3E dw '8' ; 8
+	._3F dw 0
+
+	._40 dw 0
+	._41 dw ',' ; ,
+	._42 dw 'k' ; k
+	._43 dw 'i' ; i
+	._44 dw 'o' ; o
+	._45 dw '0' ; 0
+	._46 dw '9' ; 9
+	._47 dw 0
+	._48 dw 0
+	._49 dw '.' ; .
+	._4A dw '/' ; /
+	._4B dw 'l' ; l
+	._4C dw  ';' ; ;
+	._4D dw 'p' ; p
+	._4E dw '-' ; -
+	._4F dw 0
+
+	._50 dw 0
+	._51 dw 0
+	._52 dw '''' ; '
+	._53 dw 0
+	._54 dw '[' ; [
+	._55 dw '=' ; =
+	._56 dw 0
+	._57 dw 0
+	._58 dw 0
+	._59 dw VK_RSHIFT ; Right Shift
+	._5A dw $0D ; Enter
+	._5B dw ']' ; ]
+	._5C dw 0
+	._5D dw '\' ; \
+	._5E dw 0
+	._5F dw 0
+
+	._60 dw 0
+	._61 dw 0
+	._62 dw 0
+	._63 dw 0
+	._64 dw 0
+	._65 dw 0
+	._66 dw $08 ; Backspace
+	._67 dw 0
+	._68 dw 0
+	._69 dw 0
+	._6A dw 0
+	._6B dw 0
+	._6C dw 0
+	._6D dw 0
+	._6E dw 0
+	._6F dw 0
+
+	repeat $90
+	dw 0
+	end repeat
 
 Scancodes_Table:
 	._0 db 0
