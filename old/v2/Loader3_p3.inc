@@ -6,123 +6,126 @@ Init_base_system:
 	call eax
 
 	call Init_code_table
+
+	push $7000
+	invoke ISystem.Set_Active_Module
+
 	call Init_Memory_Table
 
 	; ------------------ ;
 	; Init other modules ;
 	; ------------------ ;
-	;push $13000
-	;invoke ISystem.Set_Active_Module
-	;mov eax, $13000         ; Interrupt
-	;call eax
+	push $13000
+	invoke ISystem.Set_Active_Module
+	mov eax, $13000 	; Interrupt
+	call eax
 
-	;push $14000
-	;invoke ISystem.Set_Active_Module
-	;mov eax, $14000         ; Thread
-	;call eax
+	push $14000
+	invoke ISystem.Set_Active_Module
+	mov eax, $14000 	; Thread
+	call eax
 
-	;push $15000
-	;invoke ISystem.Set_Active_Module
-	;mov eax, $15000         ; Keyboard
-	;call eax
+	push $15000
+	invoke ISystem.Set_Active_Module
+	mov eax, $15000 	; Keyboard
+	call eax
 
+	push $11000
+	invoke ISystem.Set_Active_Module
 	mov eax, $11000 	; Video
 	call eax
 
-	;push $12000
-	;invoke ISystem.Set_Active_Module
-	;mov eax, $12000         ; Utility
-	;call eax
+	push $12000
+	invoke ISystem.Set_Active_Module
+	mov eax, $12000 	; Utility
+	call eax
 
-	;push $16000
-	;invoke ISystem.Set_Active_Module
-	;mov eax, $16000         ; Console
-	;call eax
+	push $16000
+	invoke ISystem.Set_Active_Module
+	mov eax, $16000 	; Console
+	call eax
 
-	;push $17000
-	;invoke ISystem.Set_Active_Module
-	;mov eax, $17000         ; Conversion
-	;call eax
+	push $17000
+	invoke ISystem.Set_Active_Module
+	mov eax, $17000 	; Conversion
+	call eax
 
-	;push $7000
-	;invoke ISystem.Set_Active_Module
+	push $7000
+	invoke ISystem.Set_Active_Module
 
 	; ------------------------------- ;
 	; Create console and start thread ;
 	; ------------------------------- ;
-	;cli
+	cli
 
-	;sub esp, 4
-	;mov eax, esp
-	;push eax
-	;invoke IConsole.Alloc_console
-	;pop eax
+	sub esp, 4
+	mov eax, esp
+	push eax
+	invoke IConsole.Alloc_console
+	pop eax
 
-	;mov [fs:Var.Console], eax
+	mov [fs:Var.Console], eax
 
-	;push dword [fs:Var.Console]
-	;invoke IConsole.Switch_console
+	push dword [fs:Var.Console]
+	invoke IConsole.Switch_console
 
 	; Enable IRQ0, start threads
-	;mov [esp - 1], byte 0
-	;dec esp
-	;invoke IInterrupt.Enable_IRQ
+	mov [esp - 1], byte 0
+	dec esp
+	invoke IInterrupt.Enable_IRQ
 
-	;sti
+	sti
 
 	ret
 
 Init_code_table:
-	mov [gs:ebp], dword $1FFFFF
-	add [gs:0], dword 4
+	push $1FFFFF
 	invoke ISystem.Create_Code_Region
 
-	mov [gs:ebp], dword $7000
-	mov [gs:ebp + 4], dword $8FFF
-	mov [gs:ebp + 8], dword 1
-	add [gs:0], dword 12
+	push $7000
+	push $8FFF
+	push 1
 	invoke ISystem.Mark_Code
 
-	mov [gs:ebp], dword $10000
-	mov [gs:ebp + 4], dword $10FFF
-	mov [gs:ebp + 8], dword 1
-	add [gs:0], dword 12
+	push $10000
+	push $10FFF
+	push 1
 	invoke ISystem.Mark_Code
 
-	;push $11000
-	;push $11FFF
-	;push 1
-	;invoke ISystem.Mark_Code
+	push $11000
+	push $11FFF
+	push 1
+	invoke ISystem.Mark_Code
 
-	;push $12000
-	;push $12FFF
-	;push 1
-	;invoke ISystem.Mark_Code
+	push $12000
+	push $12FFF
+	push 1
+	invoke ISystem.Mark_Code
 
-	;push $13000
-	;push $13FFF
-	;push 1
-	;invoke ISystem.Mark_Code
+	push $13000
+	push $13FFF
+	push 1
+	invoke ISystem.Mark_Code
 
-	;push $14000
-	;push $14FFF
-	;push 1
-	;invoke ISystem.Mark_Code
+	push $14000
+	push $14FFF
+	push 1
+	invoke ISystem.Mark_Code
 
-	;push $15000
-	;push $15FFF
-	;push 1
-	;invoke ISystem.Mark_Code
+	push $15000
+	push $15FFF
+	push 1
+	invoke ISystem.Mark_Code
 
-	;push $16000
-	;push $16FFF
-	;push 1
-	;invoke ISystem.Mark_Code
+	push $16000
+	push $16FFF
+	push 1
+	invoke ISystem.Mark_Code
 
-	;push $17000
-	;push $17FFF
-	;push 1
-	;invoke ISystem.Mark_Code
+	push $17000
+	push $17FFF
+	push 1
+	invoke ISystem.Mark_Code
 
 	ret
 
@@ -160,12 +163,15 @@ Print_Code_Table:
 	ret
 
 Init_Memory_Table:
-	mov [gs:ebp], dword $FFE00000
-	mov [gs:ebp + 4], dword $FFFFFFFF
-	mov [gs:ebp + 8], dword 0
-	add [gs:0], dword 12
+	push $FFE00000
+	push $FFFFFFFF
+	push 0
 	invoke ISystem.Create_Region
 
+	push $FFE00000
+	push $FFE7FFFF
+	push $7000
+	invoke ISystem.Mark_Memory
 	ret
 
 Print_Memory_Table:
@@ -199,6 +205,21 @@ Print_Memory_Table:
 	cmp [$FFFFC000 + 4 + ecx + 4], dword 0
 	jne .Loop
 	invoke IVideo.New_Line
+	ret
+
+Init_Thread:
+	sub esp, 4
+	mov eax, esp
+	push $7000
+	push Thread_1
+	push $2000
+	push eax
+	invoke IThread.New_Thread
+	pop eax
+
+	push eax
+	invoke IThread.Start
+
 	ret
 
 Print_Thread_Table:

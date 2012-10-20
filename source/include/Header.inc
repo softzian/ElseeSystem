@@ -1,6 +1,8 @@
 True = 1
 False = 0
 
+_Result = $FFFFFFF0
+
 macro invoke x
 {
 	call dword [cs:x]
@@ -49,16 +51,17 @@ ISystem.Create_Region = ISystem + 4
 ISystem.Allocate = ISystem + 8
 ISystem.Deallocate = ISystem + 12
 ISystem.Mark_Memory = ISystem + 16
+
 ISystem.Create_Code_Region = ISystem + 20
 ISystem.Allocate_Code = ISystem + 24
 ISystem.Deallocate_Code = ISystem + 28
 ISystem.Mark_Code = ISystem + 32
-ISystem.Set_Active_Module = ISystem + 36
-ISystem.Get_Active_Module = ISystem + 40
-ISystem.Create_Message_Queue = ISystem + 44
-ISystem.Send_Message = ISystem + 48
-ISystem.Get_Message = ISystem + 52
-ISystem.Copy_code_to_data = ISystem + 56
+
+ISystem.Create_Message_Queue = ISystem + 36
+ISystem.Send_Message = ISystem + 40
+ISystem.Get_Message = ISystem + 44
+
+ISystem.Copy_code_to_data = ISystem + 48
 
 IKeyboard = $100200
 IKeyboard.Set_target_queue = IKeyboard + 4

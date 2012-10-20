@@ -1,0 +1,13 @@
+Stack:
+	Result (16 bytes) $FFFFFFF0
+	Module address $FFFFFFEC
+	Thread index $FFFFFFE8
+	Stack linear address $FFFFFFE4
+	Reserved $FFFFFFE0
+	
+Second stack:
+	Stack pointer - 0
+	Reserved - 4
+	For user - 8
+	Begin - 16
+	

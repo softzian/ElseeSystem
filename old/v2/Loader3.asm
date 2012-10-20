@@ -31,41 +31,41 @@ PXE_Loader:
 	test ax, ax
 	jnz Abort
 
-	;push Var.Utility_Module
-	;push dword $12000
-	;call Function_Download_File
-	;test ax, ax
-	;jnz Abort
+	push Var.Utility_Module
+	push dword $12000
+	call Function_Download_File
+	test ax, ax
+	jnz Abort
 
-	;push Var.Interrupt_Module
-	;push dword $13000
-	;call Function_Download_File
-	;test ax, ax
-	;jnz Abort
+	push Var.Interrupt_Module
+	push dword $13000
+	call Function_Download_File
+	test ax, ax
+	jnz Abort
 
-	;push Var.Thread_Module
-	;push dword $14000
-	;call Function_Download_File
-	;test ax, ax
-	;jnz Abort
+	push Var.Thread_Module
+	push dword $14000
+	call Function_Download_File
+	test ax, ax
+	jnz Abort
 
-	;push Var.Keyboard_Module
-	;push dword $15000
-	;call Function_Download_File
-	;test ax, ax
-	;jnz Abort
+	push Var.Keyboard_Module
+	push dword $15000
+	call Function_Download_File
+	test ax, ax
+	jnz Abort
 
-	;push Var.Console_Module
-	;push dword $16000
-	;call Function_Download_File
-	;test ax, ax
-	;jnz Abort
+	push Var.Console_Module
+	push dword $16000
+	call Function_Download_File
+	test ax, ax
+	jnz Abort
 
-	;push Var.Convert_Module
-	;push dword $17000
-	;call Function_Download_File
-	;test ax, ax
-	;jnz Abort
+	push Var.Convert_Module
+	push dword $17000
+	call Function_Download_File
+	test ax, ax
+	jnz Abort
 
 	call Procedure_PXE_Finish
 
@@ -94,7 +94,6 @@ Var:
 	.Convert_Module db 11,0,'Convert.bin'
 
 	.Text db 7,0,'Success'
-	.Text2 db 'Hello World'
 	.UTF32_Str dd 'H','e','l','l','o',' ','W','o','r','l','d'
 	.Console dd 0
 
@@ -147,99 +146,63 @@ enable_A20:
 	ret
 
 GDT:
-	.gdt_null:	; 0
+	gdt_null:
 		dq 0
-	.gdt_code:	; 1
+	gdt_code:
 		dw $01FF
 		dw 0
 		db 0
 		db 10011010b
 		db 11001111b
 		db 0
-	.gdt_gdata:	; 2
+	gdt_gdata:
 		dw $FFFF
 		dw 0
 		db 0
 		db 10010010b
 		db 11001111b
 		db 0
-	.gdt_data:	; 3
+	gdt_data:
 		dw $FDFF
 		dw 0
 		db $40
 		db 10010110b
 		db 11001111b
 		db 0
-	.gdt_stack1:	; 4
-		dw $FFFE
-		dw $5000
-		db 0
-		db 10010110b
-		db 11001111b
-		db 0
-	.gdt_stack2:	; 5
-		dw 0
-		dw $5000
-		db 0
-		db 10010010b
-		db 11000000b
-		db 0
-	.ldt:		; 6
-		dw $000F
-		dw 0
-		db $2
-		db 10000010b
-		db 11000000b
-		db 0
-GDT_end:
+	gdt_end:
 GDT_Desc:
-	dw GDT_end - GDT
+	dw gdt_end - GDT
 	dd GDT
 
 use32
 
 Begin:
-	mov ax, 2 * 8
-	mov fs, ax
-
-	mov ax, 3 * 8
+	mov ax, $18
 	mov ds, ax
+	mov ss, ax
 	mov es, ax
 
-	mov ax, 4 * 8
-	mov ss, ax
-	mov esp, $FFFFFFE0
+	mov ax, $10
+	mov fs, ax
 
-	mov ax, 5 * 8
-	mov gs, ax
-	mov [gs:0], dword 16
-	mov ebp, 16
-
-	xor eax, eax
-	xor ecx, ecx
-	.Loop1:
-		mov [fs:$20000 + ecx], eax
-		add ecx, 4
-		cmp ecx, $10000
-		jb .Loop1
+	mov esp, $FFFFFFFF - $17FFFF
 
 	call Init_base_system
 
-	mov [gs:ebp], dword Var.Text2
-	mov [gs:ebp + 4], dword $FFF00000
-	mov [gs:ebp + 8], dword 11
-	add [gs:0], dword 12
-	invoke ISystem.Copy_code_to_data
-
-	mov ebp, [gs:0]
-	mov [gs:ebp], dword $FFF00000
-	mov [gs:ebp + 4], word 11
-	add [gs:0], dword 6
-	invoke IVideo.Write_Telex
+include 'Loader3_p3.inc'
 
 Halt32:
 	hlt
 	jmp Halt32
 
-include 'Loader3_p3.inc'
+Thread_1:
+	push $1029
+	invoke IUtility.Write_Cardinal_Hex
+	mov [esp - 1], byte ' '
+	dec esp
+	invoke IUtility.Write_Char
+	repeat 17
+		hlt
+	end repeat
+	jmp Thread_1
 

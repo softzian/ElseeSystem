@@ -75,12 +75,10 @@ Function_Init:
 	ret
 
 Function_Write_Telex:
-	.Text equ dword [gs:ebp - 6]
-	.Count equ word [gs:ebp - 2]
+	.Text equ dword [ebp + 10]
+	.Count equ word [ebp + 8]
 
-	push ebp
-	mov ebp, [gs:0]
-
+	enter 0, 0
 	push ebx
 	push ecx
 	push edx
@@ -133,11 +131,8 @@ Function_Write_Telex:
 	pop edx
 	pop ecx
 	pop ebx
-
-	pop ebp
-	sub [gs:0], dword 6
-	ret
-
+	leave
+	ret 6
 	.Error1:
 	mov eax, INVALID_COUNT
 	jmp .Return
