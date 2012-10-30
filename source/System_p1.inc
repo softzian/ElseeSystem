@@ -150,12 +150,12 @@ Function_Allocate:    ; Function 2
 	call Function_Split_Entry
 
 	.Done:
-	mov eax, [ss:$FFFFFFEC] ; Active module address
+	mov eax, [ss:_ModuleIdx] ; Active module address
 	mov [ebx + ecx], eax
 
 	; Return new pointer
 	mov eax, [ebx + ecx + 4]
-	mov [ss:$FFFFFFF0], eax
+	mov [ss:_Result], eax
 	xor eax, eax
 
 	.Return:

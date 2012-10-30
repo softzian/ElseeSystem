@@ -1,3 +1,8 @@
+macro Set_Active_Module x
+{
+	mov [ss:_ModuleIdx], dword x
+}
+
 Init_base_system:
 	; ------------------ ;
 	; Init System module ;
@@ -11,15 +16,13 @@ Init_base_system:
 	; ------------------ ;
 	; Init other modules ;
 	; ------------------ ;
-	;push $13000
-	;invoke ISystem.Set_Active_Module
-	;mov eax, $13000         ; Interrupt
-	;call eax
+	mov eax, $13000 	; Interrupt
+	Set_Active_Module eax
+	call eax
 
-	;push $14000
-	;invoke ISystem.Set_Active_Module
-	;mov eax, $14000         ; Thread
-	;call eax
+	mov eax, $14000 	; Thread
+	Set_Active_Module eax
+	call eax
 
 	;push $15000
 	;invoke ISystem.Set_Active_Module
@@ -27,6 +30,7 @@ Init_base_system:
 	;call eax
 
 	mov eax, $11000 	; Video
+	Set_Active_Module eax
 	call eax
 
 	;push $12000
@@ -89,25 +93,28 @@ Init_code_table:
 	add [gs:0], dword 12
 	invoke ISystem.Mark_Code
 
-	;push $11000
-	;push $11FFF
-	;push 1
-	;invoke ISystem.Mark_Code
+	mov [gs:ebp], dword $11000
+	mov [gs:ebp + 4], dword $11FFF
+	mov [gs:ebp + 8], dword 1
+	add [gs:0], dword 12
+	invoke ISystem.Mark_Code
 
 	;push $12000
 	;push $12FFF
 	;push 1
 	;invoke ISystem.Mark_Code
 
-	;push $13000
-	;push $13FFF
-	;push 1
-	;invoke ISystem.Mark_Code
+	mov [gs:ebp], dword $13000
+	mov [gs:ebp + 4], dword $13FFF
+	mov [gs:ebp + 8], dword 1
+	add [gs:0], dword 12
+	invoke ISystem.Mark_Code
 
-	;push $14000
-	;push $14FFF
-	;push 1
-	;invoke ISystem.Mark_Code
+	mov [gs:ebp], dword $14000
+	mov [gs:ebp + 4], dword $14FFF
+	mov [gs:ebp + 8], dword 1
+	add [gs:0], dword 12
+	invoke ISystem.Mark_Code
 
 	;push $15000
 	;push $15FFF

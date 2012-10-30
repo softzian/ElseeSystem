@@ -11,37 +11,39 @@
 
 include 'include\errcode.inc'
 include 'include\Header.inc'
+
 use32
 
 ; Type declaration
 ;       ThreadEntry_Type = Record
 ;               ModuleIdx : Cardinal;
-;               StackBase : Address;
-;               StackSize : Cardinal;
-;               StackPtr : Address;
-;               State : Byte;
+;               Stack1Ptr : Address;
+;               Stack2Ptr : Address;
+;               State : Cardinal;
 ;       End
 
 IThread = $100600
-; Function 1: New_Thread (ModuleIdx : Cardinal; StartPoint : Address; StackSize : Cardinal; var ThreadIdx : Cardinal)
-; Function 2: Start (ThreadIdx : Cardinal)
+; Function 1: New_Thread (StartPoint : Address) : Thread_handle_type
+; Function 2: Start (ThreadIdx : Thread_handle_type)
 ; Function 3: Yield
-; Function 4: Block
-; Function 5: BlockEx (ThreadIdx : Cardinal)
-; Function 6: Get_Active_Thread (var ThreadIdx : Cardinal)
+; Function 4: Block_self
+; Function 5: Block (ThreadIdx : Thread_handle_type)
+; Function 6: Get_Active_Thread : Thread_handle_type
 
 Const:
-	SizeOf_ThreadEntry = 17
+	SizeOf_ThreadEntry = 16
 	NumOf_ThreadEntries = 511
 	SizeOf_Thread_Table = SizeOf_ThreadEntry * (NumOf_ThreadEntries + 1)
 
-	StackBase = 4
-	StackSize = 8
-	StackPtr = 12
-	State = 16
+	ModuleIdx = 0
+	Stack1Ptr = 4
+	Stack2Ptr = 8
+	State = 12
 
-	Running = 0
-	Stop = 1
+	Free = 0
+	Running = 1
+	Stop = 2
+	Kill = 3
 
 Error_Code:
 	ZERO_MODULE_INDEX = -1
@@ -49,11 +51,15 @@ Error_Code:
 
 jmp Function_Init
 Interface:
-	.New_Thread dd Function_New_Thread
-	.Start dd Function_Start
-	.Yield dd Function_Yield
+	dd Function_New_Thread
+	dd Function_Start
+	dd Function_Yield
+	dd Function_Block_self
 
 Function_Init:
+	push ebp
+	mov ebp, [gs:0]
+
 	push ebx
 	push edi
 	push esi
@@ -76,23 +82,24 @@ Function_Init:
 		jna .Loop
 
 	; Allocate Thread Table
-	sub esp, 4
-	lea eax, [esp]
-
-	push 0
-	push eax
-	push SizeOf_Thread_Table
+	mov [gs:ebp], dword 0
+	mov [gs:ebp + 4], dword SizeOf_Thread_Table
+	add [gs:0], dword 8
 	invoke ISystem.Allocate
 
-	pop [fs:ebx + Var.ThreadTable]
+	test eax, eax
+	jnz Halt
+
+	mov eax, [ss:_Result]
+	mov [fs:ebx + Var.ThreadTable], eax
 
 	; Fill zero Thread table
-	mov esi, [fs:ebx + Var.ThreadTable]
+	mov esi, eax
 	xor eax, eax
 	xor edi, edi
 
 	.Loop2:
-		mov [esi + edi], al
+		mov [ds:esi + edi], al
 		inc edi
 		cmp edi, SizeOf_Thread_Table
 		jb .Loop2
@@ -100,10 +107,10 @@ Function_Init:
 	cli
 
 	; Install ISR for IRQ 0
-	mov [esp - 1], byte $20
-	dec esp
 	lea eax, [ebx + Procedure_IRQ0]
-	push eax
+	mov [gs:ebp], byte $20
+	mov [gs:ebp + 1], eax
+	add [gs:0], dword 5
 	invoke IInterrupt.Install_ISR
 
 	sti
@@ -111,23 +118,19 @@ Function_Init:
 	pop esi
 	pop edi
 	pop ebx
+
+	pop ebp
 	ret
 
 Function_New_Thread:	 ; Function 1
-	.ModuleIdx equ dword [ebp + 20] 	; ModuleIdx : Cardinal
-	.StartPoint equ dword [ebp + 16]	; StartPoint : Address
-	.StackSize equ dword [ebp + 12] 	; StackSize : Cardinal
-	.ThreadIdx equ dword [ebp + 8]		; var ThreadIdx : Cardinal
+	.StartPoint equ dword [gs:ebp - 4]	  ; StartPoint : Address
 
 	push ebp
-	mov ebp, esp
-	push ebx
-	push edx
-	push edi
+	mov ebp, [gs:0]
 
-	; Check ModuleIdx
-	cmp .ModuleIdx, 0
-	je .Error1	; Invalid ModuleIdx
+	push ebx
+	push ecx
+	push edi
 
 	mov ebx, [fs:IThread]
 
@@ -140,68 +143,87 @@ Function_New_Thread:	 ; Function 1
 	; Step 1 - Found empty entry
 	.Step1:
 	mov edi, [fs:ebx + Var.ThreadTable]
-	mov eax, SizeOf_ThreadEntry
+	mov ecx, 2
 
 	.Loop:
-		cmp [edi + eax], dword 0
+		cmp [ds:edi + ecx * 8 + State], dword Free
 		je .Found
-		add eax, SizeOf_ThreadEntry
-		cmp eax, NumOf_ThreadEntries * SizeOf_ThreadEntry
+		add ecx, 2
+		cmp ecx, NumOf_ThreadEntries * 2
 		jbe .Loop
 		jmp .Error2	; Thread Table is full
 
 	; Step 2 - New Thread
 	.Found:
-	add edi, eax
-	mov eax, .ModuleIdx
-	mov [edi], eax
+	mov eax, [ss:_ModuleIdx]
+	mov [ds:edi + ecx * 8 + ModuleIdx], eax
 
-	push 0
-	lea eax, [edi + StackBase]
-	push eax
-	mov eax, .StackSize
-	mov [edi + StackSize], eax
-	push eax
-	invoke ISystem.Allocate
+	; Allocate the stacks
+	mov [gs:ebp], dword $6000	; Size
+	mov [gs:ebp + 4], dword 2	; Type is stack
+	add [gs:0], dword 8
+	invoke ISystem.Allocate_Code
 
 	test eax, eax
 	jnz .Error3	; Can not allocate stack
 
-	; Init data on stack
-	mov ebx, [edi + StackBase]
-	add ebx, [edi + StackSize]
+	; Create LDT entry for the first stack
+	mov ebx, [ss:_Result]
+	add ebx, $2000
+	mov eax, ebx
+	shl eax, 16
+	add eax, ($FFFF - 2)
+	mov [fs:_LDT + ecx * 8], eax
+	mov eax, ebx
+	shr eax, 16
+	mov [fs:_LDT + ecx * 8 + 4], al
+	mov [fs:_LDT + ecx * 8 + 7], ah
+	mov [fs:_LDT + ecx * 8 + 5], word 1100111110010110b
+
+	; Init data on the first stack
+	mov eax, [ss:_ModuleIdx]
+	mov [fs:ebx - $14], eax
+	mov [fs:ebx - $18], ecx ; ThreadIdx
+	mov [fs:ebx - $1C], ebx ; Stack base
 
 	mov eax, .StartPoint
-	mov [ebx - 4], eax
+	mov [fs:ebx - $24], eax
 	pushf
-	pop dword [ebx - 8]
-	bts dword [ebx - 8], 9
+	pop dword [fs:ebx - $28]
+	bts dword [fs:ebx - $28], 9
 	; eax ebx ecx edx ebp esi edi
 	xor eax, eax
-	mov [ebx - 12], eax
-	mov [ebx - 16], eax
-	mov [ebx - 20], eax
-	mov [ebx - 24], eax
-	mov [ebx - 28], eax
-	mov [ebx - 32], eax
-	mov [ebx - 36], eax
+	mov [fs:ebx - $2C], eax
+	mov [fs:ebx - $30], eax
+	mov [fs:ebx - $34], eax
+	mov [fs:ebx - $38], eax
+	mov [fs:ebx - $3C], eax
+	mov [fs:ebx - $40], eax
+	mov [fs:ebx - $44], eax
 
-	lea eax, [ebx - 36]
-	mov [edi + StackPtr], eax
+	; Create LDT entry for the second stack
+	mov eax, ebx
+	shl eax, 16
+	add eax, 3
+	mov [fs:_LDT + ecx * 8 + 8], eax
+	mov eax, ebx
+	shr eax, 16
+	mov [fs:_LDT + ecx * 8 + 8 + 4], al
+	mov [fs:_LDT + ecx * 8 + 8 + 7], ah
+	mov [fs:_LDT + ecx * 8 + 8 + 5], word 1100000010010010b
 
-	mov [edi + State], byte Stop
+	; Init data on the second stack
+	lea eax, [ebx + 16]
+	mov [fs:ebx], eax
+
+	mov [ds:edi + ecx * 8 + Stack1Ptr], dword ($FFFFFFFF - $44 + 1)
+	mov [ds:edi + ecx * 8 + State], dword Stop
 
 	; Step 3 - Finish
-	mov ebx, [fs:IThread]
-	mov eax, edi
-	xor edx, edx
-	sub eax, [fs:ebx + Var.ThreadTable]
+	mov eax, $30
+	lldt ax
 
-	mov ebx, SizeOf_ThreadEntry
-	mov edi, .ThreadIdx
-	div ebx
-	mov [edi], eax		; Return ThreadIdx
-
+	mov [ss:_Result], ecx	       ; Return ThreadIdx
 	xor eax, eax
 
 	.Release_Lock:
@@ -210,10 +232,13 @@ Function_New_Thread:	 ; Function 1
 
 	.Return:
 	pop edi
-	pop edx
+	pop ecx
 	pop ebx
-	leave
-	ret 16
+
+	pop ebp
+	sub [gs:0], dword 4
+	ret
+
 	.Error1:
 	mov eax, ZERO_MODULE_INDEX
 	jmp .Return
@@ -224,24 +249,74 @@ Function_New_Thread:	 ; Function 1
 	mov eax, CAN_NOT_CREATE_STACK
 	jmp .Release_Lock
 
-	restore .ModuleIdx
 	restore .StartPoint
-	restore .StackSize
-	restore .ThreadIdx
 
 Function_Start: 	; Function 2
-	.ThreadIdx equ dword [ebp + 8]	; ThreadIdx : Cardinal
+	.ThreadIdx equ dword [gs:ebp - 4]  ; ThreadIdx : Cardinal
 
 	push ebp
-	mov ebp, esp
+	mov ebp, [gs:0]
 	push ebx
 
 	mov eax, .ThreadIdx
-	cmp eax, NumOf_ThreadEntries
+	cmp eax, NumOf_ThreadEntries * 2
 	ja .Error1	; Index out of range
-	mov ebx, SizeOf_ThreadEntry
-	mul ebx
+	test eax, eax
+	jz .Error1
 
+	mov ebx, [fs:IThread]
+	; Get lock 0
+	.Spinlock:
+		lock bts dword [fs:ebx + Var.Lock], 0
+		jnc .Continue
+		jmp .Spinlock
+
+	.Continue:
+	mov ebx, [fs:ebx + Var.ThreadTable]
+	mov [ds:ebx + eax * 8 + State], dword Running
+
+	xor eax, eax
+
+	.Release_Lock:
+	mov ebx, [fs:IThread]
+	lock btr dword [fs:ebx + Var.Lock], 0
+
+	.Return:
+	pop ebx
+
+	pop ebp
+	sub [gs:0], dword 4
+	ret
+
+	.Error1:
+	mov eax, INDEX_OUT_OF_RANGE
+	jmp .Return
+
+	restore .ThreadIdx
+
+Function_Yield:        ; Function 3
+	push ebx
+	mov ebx, [fs:IThread]
+
+	; Get lock 0
+	.Spinlock:
+		lock bts dword [fs:ebx + Var.Lock], 0
+		jnc .Continue
+		jmp .Spinlock
+
+	.Continue:
+	mov eax, [ss:esp + 4]
+	mov [fs:ebx + Var.EIP], eax
+
+	lea eax, [ebx + Procedure_Switch_Context]
+	mov [ss:esp + 4], eax
+
+	.Return:
+	pop ebx
+	ret
+
+Function_Block_self:	; Function 4
+	push ebx
 	mov ebx, [fs:IThread]
 
 	; Get lock 0
@@ -252,38 +327,14 @@ Function_Start: 	; Function 2
 
 	.Continue:
 	mov ebx, [fs:ebx + Var.ThreadTable]
-	mov [ebx + eax + State], byte Running
-
-	xor eax, eax
+	mov eax, [ss:_ThreadIdx]
+	mov [ds:ebx + eax * 8 + State], dword Stop
 
 	.Release_Lock:
 	mov ebx, [fs:IThread]
 	lock btr dword [fs:ebx + Var.Lock], 0
 
-	.Return:
-	pop ebx
-	leave
-	ret 4
-	.Error1:
-	mov eax, INDEX_OUT_OF_RANGE
-	jmp .Return
-
-	restore .ThreadIdx
-
-
-Function_Yield:        ; Function 3
-	push ebx
-	mov ebx, [fs:IThread]
-
-	; Get lock 0
-	lock bts dword [fs:ebx + Var.Lock], 0
-	jc .Return
-
-	mov eax, [esp + 4]
-	mov [fs:ebx + Var.EIP], eax
-
-	lea eax, [ebx + Procedure_Switch_Context]
-	mov [esp + 4], eax
+	xor eax, eax
 
 	.Return:
 	pop ebx
@@ -302,32 +353,42 @@ Procedure_Switch_Context:
 
 	mov ebx, [fs:IThread]
 	mov eax, [fs:ebx + Var.EIP]
-	mov [esp + 4 * 8], eax
+	mov [ss:esp + 4 * 8], eax
 
 	mov eax, [fs:ebx + Var.ActiveThread]
 	mov esi, [fs:ebx + Var.ThreadTable]
 	mov edi, eax
 
-	mov ecx, SizeOf_ThreadEntry
-	mul ecx
+	mov [ds:esi + eax * 8 + Stack1Ptr], esp
 
-	mov [esi + eax + StackPtr], esp
+	.Loop:
+		add eax, 2
+		cmp eax, NumOf_ThreadEntries * 2
+		jae .Wrap
 
-	add eax, ecx
-	cmp eax, NumOf_ThreadEntries * SizeOf_ThreadEntry
-	jae .Wrap
-	cmp [esi + eax], dword 0
-	je .Wrap
+		cmp [ds:esi + eax * 8 + State], dword Running
+		je .End_Loop
+		jmp .Loop
 
-	inc dword [fs:ebx + Var.ActiveThread]
-	jmp .Return
+		.Wrap:
+		mov eax, 0
+		jmp .Loop
 
-	.Wrap:
-	mov [fs:ebx + Var.ActiveThread], dword 1
-	mov eax, SizeOf_ThreadEntry
+		.End_Loop:
+
+	mov [fs:ebx + Var.ActiveThread], eax
 
 	.Return:
-	mov esp, [esi + eax + StackPtr]
+	mov ecx, eax
+	shl ecx, 3
+	add ecx, 4
+	mov ss, cx
+	mov esp, [ds:esi + eax * 8 + Stack1Ptr]
+
+	add ecx, 8
+	mov gs, cx
+
+	; Release lock
 	lock btr dword [fs:ebx + Var.Lock], 0
 
 	pop edi
@@ -355,11 +416,11 @@ Procedure_IRQ0:
 	lock bts dword [fs:ebx + Var.Lock], 0
 	jc .Return
 
-	mov eax, [esp + 4 * 2]
+	mov eax, [ss:esp + 4 * 2]
 	mov [fs:ebx + Var.EIP], eax
 
 	lea eax, [ebx + Procedure_Switch_Context]
-	mov [esp + 4 * 2], eax
+	mov [ss:esp + 4 * 2], eax
 
 	.Return:
 	invoke IInterrupt.Send_EOI

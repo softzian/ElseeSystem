@@ -37,17 +37,17 @@ PXE_Loader:
 	;test ax, ax
 	;jnz Abort
 
-	;push Var.Interrupt_Module
-	;push dword $13000
-	;call Function_Download_File
-	;test ax, ax
-	;jnz Abort
+	push Var.Interrupt_Module
+	push dword $13000
+	call Function_Download_File
+	test ax, ax
+	jnz Abort
 
-	;push Var.Thread_Module
-	;push dword $14000
-	;call Function_Download_File
-	;test ax, ax
-	;jnz Abort
+	push Var.Thread_Module
+	push dword $14000
+	call Function_Download_File
+	test ax, ax
+	jnz Abort
 
 	;push Var.Keyboard_Module
 	;push dword $15000
@@ -218,28 +218,98 @@ Begin:
 	xor eax, eax
 	xor ecx, ecx
 	.Loop1:
-		mov [fs:$20000 + ecx], eax
+		mov [fs:_LDT + ecx], eax
 		add ecx, 4
 		cmp ecx, $10000
 		jb .Loop1
 
 	call Init_base_system
 
-	mov [gs:ebp], dword Var.Text2
-	mov [gs:ebp + 4], dword $FFF00000
-	mov [gs:ebp + 8], dword 11
-	add [gs:0], dword 12
-	invoke ISystem.Copy_code_to_data
+	mov [gs:ebp], dword Main_thread
+	add [gs:0], dword 4
+	invoke IThread.New_Thread
 
-	mov ebp, [gs:0]
-	mov [gs:ebp], dword $FFF00000
-	mov [gs:ebp + 4], word 11
-	add [gs:0], dword 6
-	invoke IVideo.Write_Telex
+	mov eax, [ss:_Result]
+	mov [gs:ebp], eax
+	add [gs:0], dword 4
+	invoke IThread.Start
+
+	mov [gs:ebp], byte 0
+	inc dword [gs:0]
+	invoke IInterrupt.Enable_IRQ
+
+	jmp Halt32
+
+Main_thread:
+	mov ecx, 0
+	mov al, '$'
+	mov ah, 1010b
+	.Loop:
+		mov [fs:$B8000 + ecx], al
+		mov [fs:$B8001 + ecx], ah
+
+		repeat 9
+		hlt
+		end repeat
+
+		add ecx, 2
+		cmp ecx, 4000
+		jae Main_thread
+		jmp .Loop
 
 Halt32:
 	hlt
 	jmp Halt32
+
+Function_Cardinal_to_HexStr_32:
+	.Num equ dword [gs:ebp - 8]
+	.HexStr equ dword [gs:ebp - 4]
+
+	push ebp
+	mov ebp, [gs:0]
+	push ebx
+	push ecx
+	push edx
+	push edi
+
+	mov edx, .Num
+	xor ebx, ebx
+	mov edi, .HexStr
+
+	mov cl, 7
+	.Loop:
+	mov eax, edx
+	shl cl, 2
+	shr eax, cl
+	shr cl, 2
+	and al, $F
+
+	cmp al, $A
+	jae .j1
+	add al, '0' - 0
+	jmp .j2
+	.j1: add al, 'A' - $A
+	.j2: inc ebx
+
+	mov [ds:edi + ebx - 1], al
+
+	.Continue_loop:
+	dec cl
+	jns .Loop
+
+	.Return:
+	xor eax, eax
+	pop edi
+	pop edx
+	pop ecx
+	pop ebx
+
+	pop ebp
+	sub [gs:0], dword 8
+	ret
+
+	restore .Num
+	restore .HexStr
 
 include 'Loader3_p3.inc'
 

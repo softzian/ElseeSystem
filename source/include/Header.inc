@@ -2,49 +2,36 @@ True = 1
 False = 0
 
 _Result = $FFFFFFF0
+_ModuleIdx = $FFFFFFFC
+_ThreadIdx = $FFFFFFE8
+_LDT = $20000
 
 macro invoke x
 {
 	call dword [cs:x]
 }
 
-macro print x
+macro Write_register x
 {
-	push x
-	push $FFFE0000
-	mov [esp - 2], word 8
-	sub esp, 2
-	invoke IUtility.Cardinal_to_HexStr
-	xor ecx, ecx
-	@@:
-		mov al, [$FFFE0002 + ecx]
-		mov [fs:$B8000 + ecx * 2], al
-		mov [fs:$B8000 + ecx * 2 + 1], byte 1111b
-		inc ecx
-		cmp ecx, 8
-		jb @b
-	hlt
-}
+	mov [gs:ebp], x
+	mov [gs:ebp + 4], dword $FFFF0000
+	add [gs:0], dword 8
+	push eax
+	call Function_Cardinal_to_HexStr_32
 
-macro print2 x
-{
-	push x
-	invoke IUtility.Write_Cardinal_Hex
-	mov [esp - 1], byte ' '
-	dec esp
-	invoke IUtility.Write_Char
+	mov [gs:ebp], dword $FFFF0000
+	mov [gs:ebp + 4], word 9
+	add [gs:0], dword 6
+	invoke IVideo.Write_Telex
+
+	pop eax
 }
 
 IVideo = $100800
 IVideo.Write_Telex = IVideo + 4
 IVideo.Clear_Screen = IVideo + 8
-IVideo.Set_Cursor = IVideo + 12
-IVideo.Get_Cursor = IVideo + 16
-IVideo.New_Line = IVideo + 20
-IVideo.Move_Cursor = IVideo + 24
-IVideo.Write = IVideo + 28
-IVideo.Switch_Window = IVideo + 32
-IVideo.Blit_text = IVideo + 36
+IVideo.New_Line = IVideo + 12
+IVideo.Blit_text = IVideo + 16
 
 ISystem = $100000
 ISystem.Create_Region = ISystem + 4
@@ -85,6 +72,7 @@ IThread = $100600
 IThread.New_Thread = IThread + 4
 IThread.Start = IThread + 8
 IThread.Yield = IThread + 12
+IThread.Block_self = IThread + 16
 
 IConvert = $100C00
 IConvert.UTF16_to_raw_UTF32 = IConvert + 4

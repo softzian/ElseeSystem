@@ -288,3 +288,73 @@ Function_Copy_code_to_data:	; Function 12
 	restore .Src
 	restore .Dst
 	restore .Count
+
+Function_Create_table:	; Function 13
+	.Max_size equ word [gs:ebp - 2] ; Max_size : Word
+
+	push ebp
+	mov ebp, [gs:0]
+
+	push ecx
+
+	xor eax, eax
+	mov cx, .Max_size
+	mov ax, cx
+	shl eax, 4
+	add eax, 8
+
+	mov [gs:ebp], eax
+	mov [gs:ebp + 4], dword 2
+	add [gs:0], dword 8
+	call Function_Allocate_Code
+
+	mov eax, [ss:_Result]
+	mov [fs:eax], cx
+	mov [fs:eax + 2], word 0
+	mov [fs:eax + 4], word 0
+	mov [fs:eax + 6], word 0
+
+	xor eax, eax
+
+	.Return:
+	pop ecx
+
+	pop ebp
+	sub [gs:0], dword 2
+	ret
+
+	restore .Max_size
+
+Function_Add_table_entry:
+	.Table equ dword [gs:ebp - 20]	 ; Table : fs_Address
+	.Entry = -16 ; Entry : 16 bytes [gs:ebp - 16]
+
+	push ebp
+	mov ebp, [gs:0]
+
+	push ebx
+	push ecx
+	push edx
+	push esi
+	push edi
+
+	mov ebx, .Table
+	; Get lock
+	.Spinlock:
+		bts word [fs:ebx + 6], 0
+		jnc .Begin
+		invoke IThread.Yield
+
+	.Return:
+	pop edi
+	pop esi
+	pop edx
+	pop ecx
+	pop ebx
+
+	pop ebp
+	sub [gs:0], dword 20
+	ret
+
+	restore .Table
+	restore .index

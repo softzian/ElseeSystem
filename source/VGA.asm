@@ -30,13 +30,7 @@ jmp Function_Init
 Interface:
 	dd Function_Write_Telex
 	dd Function_Clear_Screen
-	dd Function_Set_Cursor
-	dd Function_Get_Cursor
 	dd Function_New_Line
-	dd Function_Move_Cursor
-
-	dd Function_Write
-	dd Function_Switch_Window
 
 	dd Function_Blit_text
 
@@ -66,7 +60,7 @@ Function_Init:
 		add edi, 4
 		add esi, 4
 
-		cmp edi, IVideo + 4 * 9
+		cmp edi, IVideo + 4 * 4
 		jna .Loop
 
 	pop esi
@@ -74,7 +68,7 @@ Function_Init:
 	pop ebx
 	ret
 
-Function_Write_Telex:
+Function_Write_Telex:	; Function 1
 	.Text equ dword [gs:ebp - 6]
 	.Count equ word [gs:ebp - 2]
 
@@ -145,7 +139,7 @@ Function_Write_Telex:
 	restore .Count
 	restore .Text
 
-Function_Clear_Screen:
+Function_Clear_Screen:	; Function 2
 	push ebx
 	push edi
 	push ecx
@@ -169,40 +163,7 @@ Function_Clear_Screen:
 	pop ebx
 	ret
 
-Function_Set_Cursor:	; Isn't working yet
-	.x equ byte [esp + 5]
-	.y equ byte [esp + 4]
-	mov al, .x
-	mov ah, .y
-	push ebx
-	mov ebx, [fs:IVideo]
-	mov [fs:ebx + Var.Cursor], ax
-	btr word [fs:ebx + Var.Flag], Write_Flag
-	pop ebx
-	ret 2
-	restore .x
-	restore .y
-
-Function_Get_Cursor:	; Isn't working yet
-	.x equ dword [esp + 12]
-	.y equ dword [esp + 8]
-
-	push ebx
-
-	mov ebx, [fs:IVideo]
-	mov ax, [fs:ebx + Var.Cursor]
-	mov ebx, .x
-	mov byte [ebx], al
-	mov ebx, .y
-	mov byte [ebx], ah
-
-	pop ebx
-	leave
-	ret 8
-	restore .x
-	restore .y
-
-Function_New_Line:
+Function_New_Line:	; Function 3
 	push ebx
 
 	mov ebx, [fs:IVideo]
@@ -234,210 +195,14 @@ Function_New_Line:
 	pop ebx
 	ret
 
-Function_Move_Cursor:
-	.Step equ word [esp + 12]  ; Step : Integer16
-	push ebx
-	push edi
-
-	xor eax, eax
-	mov ebx, [fs:IVideo]
-	xor edi, edi
-	mov di, [fs:ebx + Var.Cursor]
-
-	mov ax, .Step
-	test ax, ax
-	jz .Return
-	jns .Positive_Step
-
-	test edi, edi
-	jz .Return
-
-	neg ax
-	cmp eax, edi
-	jbe .j1
-	mov eax, edi
-	.j1:
-
-	shr eax, 1
-	jnc .j2
-	mov [fs:$B8000 + edi * 2 - 2], word 0
-	dec edi
-	test eax, eax
-	jz .Finish
-	.j2:
-
-	.Loop:
-	mov [fs:$B8000 + edi * 2 - 4], dword 0
-	sub edi, 2
-	dec eax
-	test eax, eax
-	jnz .Loop
-	jmp .Finish
-
-	.Positive_Step:
-	add edi, eax
-	cmp di, 4000
-	jb .Finish
-	sub di, 4000
-	call Function_Clear_Screen
-
-	.Finish:
-	mov [fs:ebx + Var.Cursor], di
-
-	.Return:
-	xor eax, eax
-	pop edi
-	pop ebx
-	ret 2
-	restore .Step
-
-Function_Write: 	; Function 7
-	.WindowIdx equ byte [ebp + 14]	; WindowIdx : Byte
-	.Text equ dword [ebp + 10]	; in Text : Array of Char
-	.Count equ word [ebp + 8]	; Count : Word
+Function_Blit_text:	; Function 4
+	.Src equ dword [gs:ebp - 12]	   ; in Src : Buffer
+	.Cursor equ dword [gs:ebp - 8]	  ; Cursor : Cardinal
+	.Count equ dword [gs:ebp - 4]	   ; Count : Cardinal
 
 	push ebp
-	mov ebp, esp
-	push ebx
-	push ecx
-	push esi
-	push edi
+	mov ebp, [gs:0]
 
-	xor ecx, ecx
-	mov cx, .Count
-	test ecx, ecx
-	je .Error1	; Invalid count
-	cmp ecx, 2000
-	ja .Error1
-
-	mov ebx, [fs:IVideo]
-
-	xor eax, eax
-	mov al, .WindowIdx
-
-	test al, al
-	jz .Error2	; Invalid window idx
-	cmp al, NumOf_Windows
-	ja .Error2
-
-	dec al
-	mov ebx, [fs:ebx + Windows_table + eax * 4]
-
-	xor edi, edi
-	mov di, [ebx]
-
-	lea eax, [ecx + edi]
-	cmp eax, 2000
-	jb .Next
-	xor edi, edi
-
-	.Next:
-	mov esi, .Text
-	shl edi, 1
-	add edi, 4
-
-	.Loop:
-		mov al, [esi]
-		mov ah, 00001111b
-		mov [ebx + edi], ax
-		inc esi
-		add edi, 2
-		loop .Loop
-
-	sub edi, 4
-	shr edi, 1
-	mov [ebx], di
-	bts word [ebx + 2], Write_Flag
-
-	mov ebx, [fs:IVideo]
-	mov al, .WindowIdx
-	cmp al, [fs:ebx + Var.Active_window]
-	jne .Finish
-
-	push .Text
-	push .Count
-	call Function_Write_Telex
-
-	.Finish:
-	xor eax, eax
-	.Return:
-	pop edi
-	pop esi
-	pop ecx
-	pop ebx
-	leave
-	ret 7
-	.Error1:
-	mov eax, INVALID_COUNT
-	jmp .Return
-	.Error2:
-	mov eax, INVALID_WINDOW_IDX
-	jmp .Return
-
-	restore .WindowIdx
-	restore .Text
-	restore .Count
-
-Function_Switch_Window:
-	.WindowIdx equ byte [ebp + 8]
-
-	push ebp
-	mov ebp, esp
-	push ebx
-	push ecx
-	push edx
-	push esi
-	push edi
-
-	mov al, .WindowIdx
-	test al, al
-	jz .Error1	; Invalid window idx
-	cmp al, NumOf_Windows
-	ja .Error1
-
-	mov ebx, [fs:IVideo]
-	cmp al, [fs:ebx + Var.Active_window]
-	je .Return
-
-	dec al
-	mov esi, [fs:ebx + Windows_table + eax * 4]
-	mov eax, [esi]
-	mov dword [fs:ebx + Var.Cursor], eax
-
-	xor ecx, ecx
-	add esi, 4
-	.Loop:
-		mov eax, [esi + ecx]
-		mov [fs:$B8000 + ecx], eax
-		add ecx, 4
-		cmp ecx, 4000
-		jb .Loop
-
-	mov al, .WindowIdx
-	mov [fs:ebx + Var.Active_window], al
-	xor eax, eax
-
-	.Return:
-	pop edi
-	pop esi
-	pop edx
-	pop ecx
-	pop ebx
-	leave
-	ret 1
-	.Error1:
-	mov eax, INVALID_WINDOW_IDX
-	jmp .Return
-
-	restore .WindowIdx
-
-Function_Blit_text:
-	.Src equ dword [ebp + 16]	; in Src : Buffer
-	.Cursor equ dword [ebp + 12]	; Cursor : Cardinal
-	.Count equ dword [ebp + 8]	; Count : Cardinal
-
-	push ebp
-	mov ebp, esp
 	push ebx
 	push ecx
 	push edx
@@ -448,6 +213,7 @@ Function_Blit_text:
 	mov edx, .Cursor
 	mov ecx, .Count
 	xor esi, esi
+
 	.Loop:
 		mov eax, [ebx]
 		mov [fs:$B8000 + edx * 2], al
@@ -470,14 +236,17 @@ Function_Blit_text:
 		jnz .Loop
 
 	xor eax, eax
+
 	.Return:
 	pop edi
 	pop esi
 	pop edx
 	pop ecx
 	pop ebx
-	leave
-	ret 12
+
+	pop ebp
+	sub [gs:0], dword 12
+	ret
 
 	restore .Src
 	restore .Cursor
@@ -537,6 +306,3 @@ Function_15bit_RGB_to_4bit_RGBI:
 Var:
 	.Cursor dw 0
 	.Flag dw 0
-	.Active_window db 1
-Windows_table:
-	dd 0 dup 2
