@@ -20,7 +20,7 @@ Function_Create_Code_Region:  ; Function 5
 	.Limit equ dword [gs:ebp - 4]
 
 	push ebp
-	mov ebp, [gs:0]
+	add ebp, 4
 
 	push ebx
 	push ecx
@@ -52,11 +52,12 @@ Function_Create_Code_Region:  ; Function 5
 	pop ecx
 	pop ebx
 	pop ebp
-	sub [gs:0], dword 4
 	ret
+
 	.Error2:
 	mov eax, REGION_SIZE_IS_NOT_LARGE_ENOUGH
 	jmp .Return
+
 	restore .Limit
 
 Function_Allocate_Code:    ; Function 6
@@ -64,7 +65,7 @@ Function_Allocate_Code:    ; Function 6
 	.Type equ dword [gs:ebp - 4]	; Type : Cardinal
 
 	push ebp
-	mov ebp, [gs:0]
+	add ebp, 8
 
 	push ebx
 	push ecx
@@ -132,14 +133,13 @@ Function_Allocate_Code:    ; Function 6
 	je .Done
 
 	mov [gs:ebp], eax	; EAX is the size we want to split
-	add dword [gs:0], 4
 	call Function_Split_Code_Entry
 
 	.Done:
 	mov eax, .Type
 	mov [fs:ebx + ecx], eax
 	mov eax, [fs:ebx + ecx + 4]
-	mov [ss:$FFFFFFF0], eax
+	mov [ss:_Result], eax
 	xor eax, eax
 
 	.Return:
@@ -150,7 +150,6 @@ Function_Allocate_Code:    ; Function 6
 	pop ebx
 
 	pop ebp
-	sub dword [gs:0], 8
 	ret
 
 	.Error2:
@@ -162,7 +161,7 @@ Function_Allocate_Code:    ; Function 6
 
 Function_Split_Code_Entry:
 	push ebp
-	mov ebp, [gs:0]
+	add ebp, 4
 
 	; Step 1 - Find first blank entry after entry ecx
 	mov edx, ecx
@@ -197,7 +196,6 @@ Function_Split_Code_Entry:
 	xor eax, eax
 	.Return:
 	pop ebp
-	sub dword [gs:0], 4
 	ret
 	.Not_Split:
 	mov eax, 1
@@ -207,7 +205,7 @@ Function_Deallocate_Code:    ; Function 7
 	.Ptr equ dword [gs:ebp - 4] ; Ptr : Address
 
 	push ebp
-	mov ebp, [gs:0]
+	add ebp, 4
 
 	push ebx
 	push ecx
@@ -242,14 +240,16 @@ Function_Deallocate_Code:    ; Function 7
 	pop ecx
 	pop ebx
 	pop ebp
-	sub dword [gs:0], 4
 	ret
+
 	.Error1:
 	mov eax, SUBINTERFACE_UNAVAILABLE
 	jmp .Return
+
 	.Not_Found:
 	mov eax, ENTRY_NOT_FOUND
 	jmp .Return
+
 	restore .Ptr
 
 Function_Merge_Code_Entry:
@@ -302,6 +302,7 @@ Function_Merge_Code_Entry:
 	mov ecx, eax
 	neg edx
 	add edx, ebx
+
 	.Loop:
 		cmp [fs:ebx + ecx + 4], dword 0
 		jne .a
@@ -321,6 +322,7 @@ Function_Merge_Code_Entry:
 		jb .Loop
 		sub ecx, SizeOf_Code_Entry
 	.End_Loop:
+
 	sub edx, ebx
 	add ecx, edx
 
@@ -346,7 +348,7 @@ Function_Mark_Code:   ; Function 8
 	.Type equ dword [gs:ebp - 4]	   ; Type : Cardinal
 
 	push ebp
-	mov ebp, [gs:0]
+	add ebp, 12
 
 	push ebx
 	push ecx
@@ -390,7 +392,6 @@ Function_Mark_Code:   ; Function 8
 	jz .Next2
 
 	mov [gs:ebp], edx
-	add dword [gs:0], 4
 	call Function_Split_Code_Entry
 
 	test eax, eax
@@ -405,7 +406,6 @@ Function_Mark_Code:   ; Function 8
 	add esi, [fs:ebx + ecx + 8]
 
 	mov [gs:ebp], esi
-	add dword [gs:0], 4
 	call Function_Split_Code_Entry
 
 	.Finish:
@@ -420,8 +420,8 @@ Function_Mark_Code:   ; Function 8
 	pop ebx
 
 	pop ebp
-	sub dword [gs:0], 12
 	ret
+
 	.Error2:
 	mov eax, NON_POSITIVE_SIZE
 	jmp .Return

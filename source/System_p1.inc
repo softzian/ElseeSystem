@@ -22,9 +22,9 @@ Function_Create_Region:  ; Function 1
 	.Type equ dword [gs:ebp - 4]
 
 	push ebp
+	add ebp, 12
 	push ebx
 	push ecx
-	mov ebp, [gs:0]
 
 	mov eax, .Type
 	test eax, eax
@@ -57,7 +57,6 @@ Function_Create_Region:  ; Function 1
 	pop ecx
 	pop ebx
 	pop ebp
-	sub [gs:0], dword 12
 	ret
 	.Error1:
 	mov eax, SUBINTERFACE_UNAVAILABLE
@@ -75,7 +74,7 @@ Function_Allocate:    ; Function 2
 	.Size equ dword [gs:ebp - 4] ; Size : Cardinal
 
 	push ebp
-	mov ebp, [gs:0]
+	add ebp, 8
 
 	push ebx
 	push ecx
@@ -146,11 +145,10 @@ Function_Allocate:    ; Function 2
 	je .Done
 
 	mov [gs:ebp], eax	; EAX is the size we want to split
-	add [gs:0], dword 4
 	call Function_Split_Entry
 
 	.Done:
-	mov eax, [ss:_ModuleIdx] ; Active module address
+	mov eax, 1;[ss:_ModuleIdx] ; Active module address
 	mov [ebx + ecx], eax
 
 	; Return new pointer
@@ -166,8 +164,8 @@ Function_Allocate:    ; Function 2
 	pop ebx
 
 	pop ebp
-	sub [gs:0], dword 8
 	ret
+
 	.Error1:
 	mov eax, SUBINTERFACE_UNAVAILABLE
 	jmp .Return
@@ -181,7 +179,7 @@ Function_Allocate:    ; Function 2
 
 Function_Split_Entry:	; Parameter is the size we want to split
 	push ebp
-	mov ebp, [gs:0]
+	add ebp, 4
 
 	; Step 1 - Find first blank entry after entry ecx
 	mov edx, ecx
@@ -216,7 +214,6 @@ Function_Split_Entry:	; Parameter is the size we want to split
 	xor eax, eax
 	.Return:
 	pop ebp
-	sub [gs:0], dword 4
 	ret
 	.Not_Split:
 	mov eax, 1
@@ -227,7 +224,7 @@ Function_Deallocate:	; Function 3
 	.Ptr equ dword [gs:ebp - 4] ; Ptr : Address
 
 	push ebp
-	mov ebp, [gs:0]
+	add ebp, 8
 	push ebx
 	push ecx
 	push edx
@@ -263,14 +260,17 @@ Function_Deallocate:	; Function 3
 	pop edx
 	pop ecx
 	pop ebx
-	leave
-	ret 8
+	pop ebp
+	ret
+
 	.Error1:
 	mov eax, SUBINTERFACE_UNAVAILABLE
 	jmp .Return
+
 	.Not_Found:
 	mov eax, ENTRY_NOT_FOUND
 	jmp .Return
+
 	restore .Ptr
 	restore .Region
 
@@ -324,6 +324,7 @@ Function_Merge_Entry:	; Merge entries around ECX
 	mov ecx, eax
 	neg edx
 	add edx, ebx
+
 	.Loop:
 		cmp [ebx + ecx + 4], dword 0
 		jne .a
@@ -342,6 +343,7 @@ Function_Merge_Entry:	; Merge entries around ECX
 		cmp ecx, SizeOf_Memory_Table
 		jb .Loop
 	.End_Loop:
+
 	sub edx, ebx
 	add ecx, edx
 
@@ -367,7 +369,7 @@ Function_Mark_Memory:	; Function 4
 	.Module_Idx equ dword [gs:ebp - 4]	; Module_Idx : Cardinal
 
 	push ebp
-	mov ebp, [gs:0]
+	add ebp, 12
 	push ebx
 	push ecx
 	push edx
@@ -410,7 +412,6 @@ Function_Mark_Memory:	; Function 4
 	jz .Next2
 
 	mov [gs:ebp], edx
-	add [gs:0], dword 4
 	call Function_Split_Entry
 
 	test eax, eax
@@ -425,7 +426,6 @@ Function_Mark_Memory:	; Function 4
 	add esi, [ebx + ecx + 8]
 
 	mov [gs:ebp], esi
-	add [gs:0], dword 4
 	call Function_Split_Entry
 
 	.Finish:
@@ -439,8 +439,8 @@ Function_Mark_Memory:	; Function 4
 	pop ecx
 	pop ebx
 	pop ebp
-	sub [gs:0], dword 12
 	ret
+
 	.Error2:
 	mov eax, NON_POSITIVE_SIZE
 	jmp .Return

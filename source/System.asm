@@ -85,7 +85,7 @@ Function_Create_Message_Queue:	; Function 9
 	.Size equ dword [gs:ebp - 4]	   ; Size : Cardinal
 
 	push ebp
-	mov ebp, [gs:0]
+	add ebp, 4
 	push ebx
 
 	mov eax, .Size
@@ -99,28 +99,25 @@ Function_Create_Message_Queue:	; Function 9
 
 	mov [gs:ebp], dword 0
 	mov [gs:ebp + 4], eax
-	add [gs:0], dword 8
 	call Function_Allocate
 
 	test eax, eax
 	jnz .Error2
 
 	mov ebx, [ss:_Result]
-	mov ebx, [ebx]
 	mov eax, .Size
 
 	add eax, ebx
-	mov [ebx], eax	; Limit
-	mov [ebx + 4], dword 0	; Lock
+	mov [ds:ebx], eax  ; Limit
+	mov [ds:ebx + 4], dword 0  ; Lock
 	lea eax, [ebx + 16]
-	mov [ebx + 8], eax	; Read pointer
-	mov [ebx + 12], eax	; Write pointer
+	mov [ds:ebx + 8], eax	   ; Read pointer
+	mov [ds:ebx + 12], eax	   ; Write pointer
 
 	xor eax, eax
 	.Return:
 	pop ebx
 	pop ebp
-	sub [gs:0], dword 4
 	ret
 
 	.Error1:
@@ -137,7 +134,7 @@ Function_Send_Message:		; Function 10
 	.Msg = -16 ; Msg : Message : 16 bytes [gs:ebp - 16]
 
 	push ebp
-	mov ebp, [gs:0]
+	add ebp, 20
 	push ebx
 	push ecx
 	push edx
@@ -146,37 +143,37 @@ Function_Send_Message:		; Function 10
 
 	; Get lock
 	.Spinlock:
-		lock bts dword [ebx + 4], 0
+		lock bts dword [ds:ebx + 4], 0
 		jnc .Next1
 		invoke IThread.Yield
 		jmp .Spinlock
 
 	.Next1:
-	mov eax, [ebx + 12]	; Write pointer
+	mov eax, [ds:ebx + 12]	   ; Write pointer
 
 	add eax, 16
-	cmp eax, [ebx]
+	cmp eax, [ds:ebx]
 	jb .Next2
-	lea eax, [ebx + 16]
+	lea eax, [ds:ebx + 16]
 
 	.Next2:
-	cmp eax, [ebx + 8]
+	cmp eax, [ds:ebx + 8]
 	je .Error1		; Queue is full
 
 	; Copy message to queue
-	mov edx, [ebx + 12]
+	mov edx, [ds:ebx + 12]
 
 	mov ecx, [gs:ebp + .Msg]
-	mov [edx], ecx
+	mov [ds:edx], ecx
 	mov ecx, [gs:ebp + .Msg + 4]
-	mov [edx + 4], ecx
+	mov [ds:edx + 4], ecx
 	mov ecx, [gs:ebp + .Msg + 8]
-	mov [edx + 8], ecx
+	mov [ds:edx + 8], ecx
 	mov ecx, [gs:ebp + .Msg + 12]
-	mov [edx + 12], ecx
+	mov [ds:edx + 12], ecx
 
 	; Update write pointer
-	mov [ebx + 12], eax
+	mov [ds:ebx + 12], eax
 
 	xor eax, eax
 
@@ -188,7 +185,6 @@ Function_Send_Message:		; Function 10
 	pop ecx
 	pop ebx
 	pop ebp
-	sub [gs:0], dword 20
 	ret
 	.Error1:
 	mov eax, MESSAGE_QUEUE_FULL
@@ -200,7 +196,7 @@ Function_Get_Message:	       ; Function 11
 	.Queue equ dword [gs:ebp - 4]	  ; Queue : Address
 
 	push ebp
-	mov ebp, [gs:0]
+	add ebp, 4
 	push ebx
 	push ecx
 
@@ -208,45 +204,44 @@ Function_Get_Message:	       ; Function 11
 
 	; Get lock
 	.Spinlock:
-		lock bts dword [ebx + 4], 0
+		lock bts dword [ds:ebx + 4], 0
 		jnc .Next1
 		invoke IThread.Yield
 		jmp .Spinlock
 
 	.Next1:
-	mov eax, [ebx + 8]	; Read pointer
+	mov eax, [ds:ebx + 8]	   ; Read pointer
 
-	cmp eax, [ebx + 12]
+	cmp eax, [ds:ebx + 12]
 	je .Error1		; Queue is empty
 
 	; Get message from queue
-	mov ecx, [eax]
+	mov ecx, [ds:eax]
 	mov [ss:_Result], ecx
-	mov ecx, [eax + 4]
+	mov ecx, [ds:eax + 4]
 	mov [ss:_Result + 4], ecx
-	mov ecx, [eax + 8]
+	mov ecx, [ds:eax + 8]
 	mov [ss:_Result + 8], ecx
-	mov ecx, [eax + 12]
+	mov ecx, [ds:eax + 12]
 	mov [ss:_Result + 12], ecx
 
 	; Increase read pointer
 	add eax, 16
-	cmp eax, [ebx]
+	cmp eax, [ds:ebx]
 	jb .Finish
-	lea eax, [ebx + 16]
+	lea eax, [ds:ebx + 16]
 
 	.Finish:
-	mov [ebx + 8], eax
+	mov [ds:ebx + 8], eax
 	xor eax, eax
 
 	.Release_lock:
-	lock btr dword [ebx + 4], 0
+	lock btr dword [ds:ebx + 4], 0
 
 	.Return:
 	pop ecx
 	pop ebx
 	pop ebp
-	sub [gs:0], dword 4
 	ret
 
 	.Error1:
@@ -261,7 +256,7 @@ Function_Copy_code_to_data:	; Function 12
 	.Count equ dword [gs:ebp - 4]	; Count : Cardinal
 
 	push ebp
-	mov ebp, [gs:0]
+	add ebp, 12
 	push ecx
 	push esi
 	push edi
@@ -282,79 +277,8 @@ Function_Copy_code_to_data:	; Function 12
 	pop esi
 	pop ecx
 	pop ebp
-	sub [gs:0], dword 12
 	ret
 
 	restore .Src
 	restore .Dst
 	restore .Count
-
-Function_Create_table:	; Function 13
-	.Max_size equ word [gs:ebp - 2] ; Max_size : Word
-
-	push ebp
-	mov ebp, [gs:0]
-
-	push ecx
-
-	xor eax, eax
-	mov cx, .Max_size
-	mov ax, cx
-	shl eax, 4
-	add eax, 8
-
-	mov [gs:ebp], eax
-	mov [gs:ebp + 4], dword 2
-	add [gs:0], dword 8
-	call Function_Allocate_Code
-
-	mov eax, [ss:_Result]
-	mov [fs:eax], cx
-	mov [fs:eax + 2], word 0
-	mov [fs:eax + 4], word 0
-	mov [fs:eax + 6], word 0
-
-	xor eax, eax
-
-	.Return:
-	pop ecx
-
-	pop ebp
-	sub [gs:0], dword 2
-	ret
-
-	restore .Max_size
-
-Function_Add_table_entry:
-	.Table equ dword [gs:ebp - 20]	 ; Table : fs_Address
-	.Entry = -16 ; Entry : 16 bytes [gs:ebp - 16]
-
-	push ebp
-	mov ebp, [gs:0]
-
-	push ebx
-	push ecx
-	push edx
-	push esi
-	push edi
-
-	mov ebx, .Table
-	; Get lock
-	.Spinlock:
-		bts word [fs:ebx + 6], 0
-		jnc .Begin
-		invoke IThread.Yield
-
-	.Return:
-	pop edi
-	pop esi
-	pop edx
-	pop ecx
-	pop ebx
-
-	pop ebp
-	sub [gs:0], dword 20
-	ret
-
-	restore .Table
-	restore .index

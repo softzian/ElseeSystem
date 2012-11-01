@@ -49,17 +49,17 @@ PXE_Loader:
 	test ax, ax
 	jnz Abort
 
-	;push Var.Keyboard_Module
-	;push dword $15000
-	;call Function_Download_File
-	;test ax, ax
-	;jnz Abort
+	push Var.Keyboard_Module
+	push dword $15000
+	call Function_Download_File
+	test ax, ax
+	jnz Abort
 
-	;push Var.Console_Module
-	;push dword $16000
-	;call Function_Download_File
-	;test ax, ax
-	;jnz Abort
+	push Var.Console_Module
+	push dword $16000
+	call Function_Download_File
+	test ax, ax
+	jnz Abort
 
 	;push Var.Convert_Module
 	;push dword $17000
@@ -212,7 +212,6 @@ Begin:
 
 	mov ax, 5 * 8
 	mov gs, ax
-	mov [gs:0], dword 16
 	mov ebp, 16
 
 	xor eax, eax
@@ -224,19 +223,6 @@ Begin:
 		jb .Loop1
 
 	call Init_base_system
-
-	mov [gs:ebp], dword Main_thread
-	add [gs:0], dword 4
-	invoke IThread.New_Thread
-
-	mov eax, [ss:_Result]
-	mov [gs:ebp], eax
-	add [gs:0], dword 4
-	invoke IThread.Start
-
-	mov [gs:ebp], byte 0
-	inc dword [gs:0]
-	invoke IInterrupt.Enable_IRQ
 
 	jmp Halt32
 
@@ -266,7 +252,7 @@ Function_Cardinal_to_HexStr_32:
 	.HexStr equ dword [gs:ebp - 4]
 
 	push ebp
-	mov ebp, [gs:0]
+	add ebp, 8
 	push ebx
 	push ecx
 	push edx
@@ -305,7 +291,6 @@ Function_Cardinal_to_HexStr_32:
 	pop ebx
 
 	pop ebp
-	sub [gs:0], dword 8
 	ret
 
 	restore .Num

@@ -10,6 +10,7 @@
 ; If not, see http://creativecommons.org/publicdomain/zero/1.0/
 
 include 'include\errcode.inc'
+include 'include\Header.inc'
 use32
 
 IInterrupt = $100400
@@ -55,6 +56,11 @@ Function_Init:
 	call Function_Init_PIC
 	call Function_Mask_all_IRQ
 
+	lea eax, [ebx + Procedure_INT_13]
+	mov [gs:ebp], byte 13
+	mov [gs:ebp + 1], eax
+	call Function_Install_ISR
+
 	pop esi
 	pop edi
 	pop ebx
@@ -65,7 +71,7 @@ Function_Install_ISR:
 	.ISR_Entry equ dword [gs:ebp - 4]
 
 	push ebp
-	mov ebp, [gs:0]
+	add ebp, 5
 	push ebx
 
 	mov ebx, [fs:IInterrupt]
@@ -88,7 +94,6 @@ Function_Install_ISR:
 	pop ebx
 
 	pop ebp
-	sub [gs:0], dword 5
 	ret
 
 	restore .INum
@@ -135,7 +140,7 @@ Function_Enable_IRQ:
 	.IRQNum equ byte [gs:ebp - 1]
 
 	push ebp
-	mov ebp, [gs:0]
+	inc ebp
 
 	push ebx
 	push ecx
@@ -156,8 +161,8 @@ Function_Enable_IRQ:
 	pop ebx
 
 	pop ebp
-	sub [gs:0], dword 1
 	ret
+
 	restore .IRQNum
 
 Function_Send_EOI:
@@ -165,9 +170,96 @@ Function_Send_EOI:
 	out $20, al
 	ret
 
+Function_Cardinal_to_HexStr_32:
+	.Num equ dword [gs:ebp - 8]
+	.HexStr equ dword [gs:ebp - 4]
+
+	push ebp
+	add ebp, 8
+	push ebx
+	push ecx
+	push edx
+	push edi
+
+	mov edx, .Num
+	xor ebx, ebx
+	mov edi, .HexStr
+
+	mov cl, 7
+	.Loop:
+	mov eax, edx
+	shl cl, 2
+	shr eax, cl
+	shr cl, 2
+	and al, $F
+
+	cmp al, $A
+	jae .j1
+	add al, '0' - 0
+	jmp .j2
+	.j1: add al, 'A' - $A
+	.j2: inc ebx
+
+	mov [ds:edi + ebx - 1], al
+
+	.Continue_loop:
+	dec cl
+	jns .Loop
+
+	.Return:
+	xor eax, eax
+	pop edi
+	pop edx
+	pop ecx
+	pop ebx
+
+	pop ebp
+	ret
+
+	restore .Num
+	restore .HexStr
+
+Procedure_INT_13:
+	cli
+	mov ecx, ebx
+	mov ebx, [fs:IInterrupt]
+
+	lea eax, [ebx + Static.Text]
+	mov [gs:ebp], eax
+	mov [gs:ebp + 4], dword $FFFE0000
+	mov [gs:ebp + 8], dword 31
+	invoke ISystem.Copy_code_to_data
+
+	mov [gs:ebp], dword $FFFE0000
+	mov [gs:ebp + 4], word 31
+	invoke IVideo.Write_Telex
+
+	mov eax, [ss:esp + 4]
+	Write_register eax
+
+	invoke IVideo.New_Line
+
+	lea eax, [ebx + Static.Text2]
+	mov [gs:ebp], eax
+	mov [gs:ebp + 4], dword $FFFE0000
+	mov [gs:ebp + 8], dword 11
+	invoke ISystem.Copy_code_to_data
+
+	mov [gs:ebp], dword $FFFE0000
+	mov [gs:ebp + 4], word 11
+	invoke IVideo.Write_Telex
+
+	xor eax, eax
+	mov ax, ss
+	Write_register ecx
+
+	hlt
+
 Static:
 	.IRQMask1 db 0
 	.IRQMask2 db 0
+	.Text db 'General Protection Fault! EIP: '
+	.Text2 db 'ModuleIdx: '
 IDT:
 	repeat 256
 		dw 0

@@ -14,7 +14,7 @@ include 'include\errcode.inc'
 use32
 
 IConsole = $100E00
-; Function 1: Alloc_console (out Console : Handle_type)
+; Function 1: Alloc_console : Handle_type
 ; Function 2: Write_console (Console : Handle_type; in Str : raw_UTF32_string; Count : Cardinal)
 ; Function 3: Read_console (Console : Handle_type; out Str : raw_UTF32_string; Max_count : Cardinal)
 ; Function 4: Switch_console (Console : Handle_type)
@@ -27,8 +27,18 @@ Interface:
 	dd Function_Switch_console
 
 Const:
-	NumOf_Windows = 2
-	Write_Flag = 0
+	; Console record
+	Console_screen = 8
+	Console_input = 4
+	Console_lock = 0
+
+	; Screen Buffer record
+	Screen_cursor = 0
+	Screen_attribute = 4
+	Screen_size = 8
+	Screen_width = 12
+	Screen_height = 14
+
 Error_Code:
 	CANNOT_ALLOC_MEMORY = -1
 	STRING_LENGTH_IS_ZERO = -2
@@ -40,9 +50,6 @@ Var:
 	.Lock dd 0
 
 Function_Init:
-	push ebp
-	mov ebp, [gs:0]
-
 	push ebx
 	push edi
 	push esi
@@ -65,51 +72,59 @@ Function_Init:
 		jna .Loop
 
 	mov [gs:ebp], dword 1024
-	add [gs:0], dword 4
 	invoke ISystem.Create_Message_Queue
 
 	mov eax, [ss:_Result]
 	mov [fs:ebx + Var.Queue], eax
 
 	mov [gs:ebp], eax
-	add [gs:0], dword 4
 	invoke IKeyboard.Set_target_queue
 
 	lea eax, [ebx + Main_thread]
 	mov [gs:ebp], eax
-	add [gs:0], dword 4
 	invoke IThread.New_Thread
+
+	mov eax, [ss:_Result]
+	mov [gs:ebp], eax
+	invoke IThread.Start
 
 	.Return:
 	pop esi
 	pop edi
 	pop ebx
-
-	pop ebp
 	ret
 
 Main_thread:
-	mov ebp, [gs:0]
+	; Local variable
+	.Data equ dword [gs:ebp - 4]	; Data : Array
+
+	add ebp, 4
 	mov ebx, [fs:IConsole]
 
 	mov [gs:ebp], dword 0
 	mov [gs:ebp + 4], dword $400
-	add [gs:0], dword 8
 	invoke ISystem.Allocate
 
+	mov esi, [ss:_Result]
+	mov .Data, esi
+
 	.Message_loop:
+	hlt
+	Write_register ebx
 	mov eax, [fs:ebx + Var.Queue]
 	mov [gs:ebp], eax
-	add [gs:0], dword 4
 	invoke ISystem.Get_Message
 
 	test eax, eax
 	jnz .Wait
 
-	push dword [fs:ebx + Var.Active_console]
-	lea eax, [ebp - 16]
-	push eax
-	push 1
+	mov eax, [ss:_Result]
+	mov [ds:esi], eax
+
+	mov eax, [fs:ebx + Var.Active_console]
+	mov [gs:ebp], eax
+	mov [gs:ebp + 4], esi
+	mov [gs:ebp + 8], dword 1
 	call Function_Write_console
 
 	.Wait:
@@ -117,62 +132,68 @@ Main_thread:
 	jmp .Message_loop
 
 Function_Alloc_console: 	; Function 1
-	.Console equ dword [ebp + 8]	; out Console : Handle_type
-
-	push ebp
-	mov ebp, esp
 	push ebx
+	push ecx
 
-	push .Console
-	push 1024
+	mov [gs:ebp], dword 1024
 	invoke ISystem.Create_Message_Queue
 
 	test eax, eax
 	jnz .Error2
 
-	mov ebx, .Console
-	mov ebx, [ebx]
+	mov ebx, [ss:_Result]
 
-	push 0
-	push .Console
-	push (2000 * 8 + 4 * 6)
+	mov [gs:ebp], dword 0
+	mov [gs:ebp + 4], dword 16
 	invoke ISystem.Allocate
 
 	test eax, eax
 	jnz .Error1
 
-	mov eax, .Console
-	mov eax, [eax]
-	mov [eax], dword 0	; Lock
-	mov [eax + 4], ebx	; Message queue
-	mov [eax + 8], dword 0	; Cursor
-	mov [eax + 12], dword $3E007FFF ; Default attribute
-	mov [eax + 16], dword 2000	; Size in character
-	mov [eax + 20], word 80 	; Width
-	mov [eax + 22], word 25 	; Height
+	mov ecx, [ss:_Result]
 
+	mov [gs:ebp], dword 0
+	mov [gs:ebp + 4], dword (16 + 2000 * 8)
+	invoke ISystem.Allocate
+
+	mov eax, [ss:_Result]
+
+	mov [ds:ecx + Console_lock], dword 0   ; Lock
+	mov [ds:ecx + Console_input], ebx   ; Input queue
+	mov [ds:ecx + Console_screen], eax   ; Screen buffer
+
+	mov [ds:eax + Screen_cursor], dword 0			; Cursor
+	mov [ds:eax + Screen_attribute], dword $3E007FFF       ; Default attribute
+	mov [ds:eax + Screen_size], dword 2000		  ; Size in character
+	mov [ds:eax + Screen_width], word 80		  ; Width
+	mov [ds:eax + Screen_height], word 25		   ; Height
+
+	mov [ss:_Result], ecx
 	xor eax, eax
 
 	.Return:
+	pop ecx
 	pop ebx
-	leave
-	ret 4
+	ret
+
 	.Error1:
+	mov [gs:ebp], dword 0
+	mov [gs:ebp + 4], ebx
+	invoke ISystem.Deallocate
 	mov eax, CANNOT_ALLOC_MEMORY
 	jmp .Return
+
 	.Error2:
 	mov eax, CANNOT_ALLOC_QUEUE
 	jmp .Return
 
-	restore .Console
-
 Function_Write_console: 	; Function 2
-	.Console equ dword [ebp + 16]	; Console : Handle_type
-	.Str equ dword [ebp + 12]	; in Str : raw_UTF32_string
-	.Count equ dword [ebp + 8]	; Count : Cardinal
+	.Console equ dword [gs:ebp - 12]	; Console : Handle_type
+	.Str equ dword [gs:ebp - 8]		; in Str : raw_UTF32_string
+	.Count equ dword [gs:ebp - 4]		; Count : Cardinal
 
 	push ebp
-	mov ebp, esp
+	add ebp, 12
 	push ebx
 	push ecx
 	push edx
@@ -186,7 +207,7 @@ Function_Write_console: 	; Function 2
 	mov ebx, .Console
 
 	.Spinlock:
-		lock bts dword [ebx], 0
+		lock bts dword [ds:ebx + Console_lock], 0
 		jnc .Begin
 		invoke IThread.Yield
 		jmp .Spinlock
@@ -194,13 +215,16 @@ Function_Write_console: 	; Function 2
 	.Begin:
 	xor ecx, ecx
 	mov esi, .Str
-	mov eax, [ebx + 8]
-	lea edi, [ebx + 24 + eax * 8]
-	mov ebx, [ebx + 12]
+
+	mov ebx, [ds:ebx + Console_screen]
+	mov eax, [ds:ebx + Screen_cursor]
+	lea edi, [ebx + 16 + eax * 8]
+	mov ebx, [ds:ebx + Screen_attribute]
+
 	.Loop:
-		mov eax, [esi + ecx * 4]
-		mov [edi + ecx * 8], eax
-		mov [edi + ecx * 8 + 4], ebx
+		mov eax, [ds:esi + ecx * 4]
+		mov [ds:edi + ecx * 8], eax
+		mov [ds:edi + ecx * 8 + 4], ebx
 		inc ecx
 		cmp ecx, edx
 		jb .Loop
@@ -211,18 +235,20 @@ Function_Write_console: 	; Function 2
 	cmp ebx, [fs:eax + Var.Active_console]
 	jne .Done
 
-	mov ecx, [ebx + 8]
-	lea eax, [ebx + 24 + ecx * 8]
-	push eax
-	push ecx
-	push edx
+	mov esi, [ds:ebx + Console_screen]
+	mov ecx, [ds:esi + Screen_cursor]
+	lea eax, [esi + 16 + ecx * 8]
+
+	mov [gs:ebp], eax
+	mov [gs:ebp + 4], ecx
+	mov [gs:ebp + 8], edx
 	invoke IVideo.Blit_text
 
 	; Update cursor
-	add [ebx + 8], edx
+	add [ds:esi + Screen_cursor], edx
 
 	.Done: xor eax, eax
-	.Unlock: lock btr dword [ebx], 0
+	.Unlock: lock btr dword [ds:ebx + Console_lock], 0
 
 	.Return:
 	pop edi
@@ -230,77 +256,23 @@ Function_Write_console: 	; Function 2
 	pop edx
 	pop ecx
 	pop ebx
-	leave
-	ret 12
+
+	pop ebp
+	ret
+
 	.Error1:
 	mov eax, STRING_LENGTH_IS_ZERO
 	jmp .Return
-	.Error2:
-	mov eax, CANNOT_ALLOC_MEMORY
-	jmp .Unlock
 
 	restore .Console
+	restore .Count
 	restore .Str
 
-Procedure_Convert:	; Convert text in String format to console format
-			; and put it in screen buffer
-	; EBX Console : Handle_type
-	; ESI in Str : String
-	push eax
-	push ecx
-	push edx
-
-	sub esp, 4
-	mov eax, esp
-	push 0
-	push eax
-	mov eax, [esi]
-	shl eax, 1
-	push eax
-	invoke ISystem.Allocate
-	pop edx
-
-	test eax, eax
-	jnz .Error1
-
-	push esi
-	push edx
-	invoke IConvert.UTF16_to_raw_UTF32
-
-	push esi
-	push edi
-	xor ecx, ecx
-	mov esi, [esi]	; Length
-	mov edi, [ebx + 12]	; Attribute
-
-	.Loop:
-		mov eax, [edx + ecx * 4]
-		mov [ebx + 24 + ecx * 8], eax
-		mov [ebx + 24 + ecx * 8 + 4], edi
-		inc ecx
-		cmp ecx, esi
-		jb .Loop
-	pop edi
-	pop esi
-
-	push 0
-	push edx
-	invoke ISystem.Deallocate
-
-	.Return:
-	pop edx
-	pop ecx
-	pop eax
-	ret
-	.Error1:
-	mov esi, 0
-	jmp .Return
-
 Function_Switch_console:	; Function 4
-	.Console equ dword [ebp + 8]	; Console : Handle_type
+	.Console equ dword [gs:ebp - 4]    ; Console : Handle_type
 
 	push ebp
-	mov ebp, esp
+	add ebp, 4
 	push ebx
 
 	mov ebx, [fs:IConsole]
@@ -315,10 +287,13 @@ Function_Switch_console:	; Function 4
 		jmp .Spinlock
 
 	.Begin:
-	lea ebx, [eax + 24]
-	push ebx
-	push 0
-	push dword [eax + 16]
+	mov eax, [ds:eax + Console_screen]
+	lea ebx, [eax + 16]
+	mov eax, [ds:eax + Screen_size]
+
+	mov [gs:ebp], ebx
+	mov [gs:ebp + 4], dword 0
+	mov [gs:ebp + 8], eax
 	invoke IVideo.Blit_text
 
 	mov eax, .Console
@@ -331,7 +306,56 @@ Function_Switch_console:	; Function 4
 
 	.Return:
 	pop ebx
-	leave
-	ret 4
+	pop ebp
+	ret
 
 	restore .Console
+
+Function_Cardinal_to_HexStr_32:
+	.Num equ dword [gs:ebp - 8]
+	.HexStr equ dword [gs:ebp - 4]
+
+	push ebp
+	add ebp, 8
+	push ebx
+	push ecx
+	push edx
+	push edi
+
+	mov edx, .Num
+	xor ebx, ebx
+	mov edi, .HexStr
+
+	mov cl, 7
+	.Loop:
+	mov eax, edx
+	shl cl, 2
+	shr eax, cl
+	shr cl, 2
+	and al, $F
+
+	cmp al, $A
+	jae .j1
+	add al, '0' - 0
+	jmp .j2
+	.j1: add al, 'A' - $A
+	.j2: inc ebx
+
+	mov [ds:edi + ebx - 1], al
+
+	.Continue_loop:
+	dec cl
+	jns .Loop
+
+	.Return:
+	xor eax, eax
+	pop edi
+	pop edx
+	pop ecx
+	pop ebx
+
+	pop ebp
+	ret
+
+	restore .Num
+	restore .HexStr

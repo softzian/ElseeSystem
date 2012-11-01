@@ -47,9 +47,6 @@ Error_Code:
 	INVALID_COUNT = -2
 
 Function_Init:
-	push ebp
-	mov ebp, [gs:0]
-
 	push ebx
 	push esi
 	push edi
@@ -78,16 +75,14 @@ Function_Init:
 	lea eax, [ebx + Procedure_IRQ1]
 	mov [gs:ebp], byte $21
 	mov [gs:ebp + 1], eax
-	add [gs:0], dword 5
 	invoke IInterrupt.Install_ISR
 
 	mov [gs:ebp], byte 1
-	inc dword [gs:0]
 	invoke IInterrupt.Enable_IRQ
 
 	sti
 
-	lea ebx, [ebx + Keyboard_Buffer]
+	add ebx, Keyboard_Buffer
 	mov eax, 1024
 	call Function_Create_Ring_Buffer
 
@@ -95,8 +90,11 @@ Function_Init:
 
 	lea eax, [ebx + Processing_thread]
 	mov [gs:ebp], eax
-	add [gs:0], dword 4
 	invoke IThread.New_Thread
+
+	mov eax, [ss:_Result]
+	mov [gs:ebp], eax
+	invoke IThread.Start
 
 	.Return:
 	xor eax, eax
@@ -104,8 +102,6 @@ Function_Init:
 	pop edi
 	pop esi
 	pop ebx
-
-	pop ebp
 	ret
 
 Function_Init_Keyboard:
@@ -201,17 +197,19 @@ Function_Ring_Buffer_Read:
 	.j1: mov [fs:ebx + 4], eax
 	mov al, [fs:eax]
 	and eax, $FF
+
 	ret
+
 	.Buffer_Empty:
 	mov ah, -1
 	ret
 
 Function_Ring_Buffer_Write:
-	.Buffer equ dword [ebp - 5]
+	.Buffer equ dword [gs:ebp - 5]
 	.In equ byte [gs:ebp - 1]
 
 	push ebp
-	mov ebp, [gs:0]
+	add ebp, 5
 	push ebx
 
 	mov ebx, .Buffer
@@ -243,7 +241,6 @@ Function_Ring_Buffer_Write:
 	.Return:
 	pop ebx
 	pop ebp
-	sub [gs:0], dword 5
 	ret
 
 	restore .Buffer
@@ -258,7 +255,7 @@ Function_Set_target_queue:
 	.Queue equ dword [gs:ebp - 4]	   ; Queue : Address
 
 	push ebp
-	mov ebp, [gs:0]
+	add ebp, 4
 	push ebx
 
 	mov ebx, [fs:IKeyboard]
@@ -268,7 +265,6 @@ Function_Set_target_queue:
 
 	pop ebx
 	pop ebp
-	sub [gs:0], dword 4
 	ret
 
 	restore .Queue
@@ -289,7 +285,6 @@ Procedure_IRQ1:
 	lea ecx, [ebx + Keyboard_Buffer]
 	mov [gs:ebp], ecx
 	mov [gs:ebp + 4], al
-	add [gs:0], dword 5
 	call Function_Ring_Buffer_Write
 
 	jmp .loop1
@@ -318,16 +313,16 @@ Processing_thread:
 	test ecx, ecx
 	jz .Set_flag
 
+	mov edi, eax
+
 	.Send_message:
 	mov edx, [fs:ebx + Var.Flag]
 	mov [gs:ebp + 4], ecx
 	mov [gs:ebp + 8], eax
 	mov [gs:ebp + 12], edx
 
-	mov edi, eax
 	mov eax, [fs:ebx + Var.Target_queue]
 	mov [gs:ebp], eax
-	add [gs:0], dword 20
 	invoke ISystem.Send_Message
 
 	test eax, eax
@@ -384,6 +379,7 @@ Const:
 Var:
 	.Flag dd 0
 	.Target_queue dd 0
+
 Keyboard_Buffer db (1024+13) dup 0
 
 US_Layout:
@@ -508,130 +504,6 @@ US_Layout:
 
 	repeat $90
 	dw 0
-	end repeat
-
-Scancodes_Table:
-	._0 db 0
-	._1 db 0 ; F9
-	._2 db 0
-	._3 db 0 ; F5
-	._4 db 0 ; F3
-	._5 db 0 ; F1
-	._6 db 0 ; F2
-	._7 db 0 ; F12
-	._8 db 0
-	._9 db 0 ; F10
-	._A db 0 ; F8
-	._B db 0 ; F6
-	._C db 0 ; F4
-	._D db 0 ; Tab
-	._E db '`' ; `
-	._F db 0
-
-	._10 db 0
-	._11 db 0 ; Alt
-	._12 db 0 ; Shift
-	._13 db 0
-	._14 db 0 ; Ctrl
-	._15 db 'q' ; q
-	._16 db '1' ; 1
-	._17 db 0
-	._18 db 0
-	._19 db 0
-	._1A db 'z' ; z
-	._1B db 's' ; s
-	._1C db 'a' ; a
-	._1D db 'w' ; w
-	._1E db '2' ; 2
-	._1F db 0
-
-	._20 db 0
-	._21 db 'c' ; c
-	._22 db 'x' ; x
-	._23 db 'd' ; d
-	._24 db 'e' ; e
-	._25 db '4' ; 4
-	._26 db '3' ; 3
-	._27 db 0
-	._28 db 0
-	._29 db ' ' ; Space
-	._2A db 'v' ; v
-	._2B db 'f' ; f
-	._2C db 't' ; t
-	._2D db 'r' ; r
-	._2E db '5' ; 5
-	._2F db 0
-
-	._30 db 0
-	._31 db 'n' ; n
-	._32 db 'b' ; b
-	._33 db 'h' ; h
-	._34 db 'g' ; g
-	._35 db 'y' ; y
-	._36 db '6' ; 6
-	._37 db 0
-	._38 db 0
-	._39 db 0
-	._3A db 'm' ; m
-	._3B db 'j' ; j
-	._3C db 'u' ; u
-	._3D db '7' ; 7
-	._3E db '8' ; 8
-	._3F db 0
-
-	._40 db 0
-	._41 db ',' ; ,
-	._42 db 'k' ; k
-	._43 db 'i' ; i
-	._44 db 'o' ; o
-	._45 db '0' ; 0
-	._46 db '9' ; 9
-	._47 db 0
-	._48 db 0
-	._49 db '.' ; .
-	._4A db '/' ; /
-	._4B db 'l' ; l
-	._4C db ';' ; ;
-	._4D db 'p' ; p
-	._4E db '-' ; -
-	._4F db 0
-
-	._50 db 0
-	._51 db 0
-	._52 db '''' ; '
-	._53 db 0
-	._54 db '[' ; [
-	._55 db '=' ; =
-	._56 db 0
-	._57 db 0
-	._58 db 0
-	._59 db 0 ; Right Shift
-	._5A db 13 ; Enter
-	._5B db ']' ; ]
-	._5C db 0
-	._5D db '\' ; \
-	._5E db 0
-	._5F db 0
-
-	._60 db 0
-	._61 db 0
-	._62 db 0
-	._63 db 0
-	._64 db 0
-	._65 db 0
-	._66 db 8 ; Backspace
-	._67 db 0
-	._68 db 0
-	._69 db 0
-	._6A db 0
-	._6B db 0
-	._6C db 0
-	._6D db 0
-	._6E db 0
-	._6F db 0
-
-	repeat $90
-	db 0
 	end repeat
 
 Shift_Scancodes_Table:

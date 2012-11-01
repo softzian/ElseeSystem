@@ -16,15 +16,9 @@ use32
 IVideo = $100800
 ; Function 1: Write_Telex (var Text : Array of Char; Count : Word)
 ; Function 2: Clear_Screen
-; Function 3: Set_Cursor (x, y : Byte)
-; Function 4: Get_Cursor (var x, var y : Byte)
-; Function 5: New_Line
-; Function 6: Move_Cursor (Step : Integer16)
+; Function 3: New_Line
 
-; Function 7: Write (WindowIdx : Byte; in Text : Array of Char; Count : Word)
-; Function 8: Switch_Window (WindowIdx : Byte)
-
-; Function 9: Blit_text (in Src : Buffer; Cursor, Count : Cardinal)
+; Function 4: Blit_text (in Src : Buffer; Cursor, Count : Cardinal)
 
 jmp Function_Init
 Interface:
@@ -35,11 +29,9 @@ Interface:
 	dd Function_Blit_text
 
 Const:
-	NumOf_Windows = 2
 	Write_Flag = 0
 Error_Code:
 	INVALID_COUNT = -1
-	INVALID_WINDOW_IDX = -2
 
 Function_Init:
 	push ebx
@@ -73,7 +65,7 @@ Function_Write_Telex:	; Function 1
 	.Count equ word [gs:ebp - 2]
 
 	push ebp
-	mov ebp, [gs:0]
+	add ebp, 6
 
 	push ebx
 	push ecx
@@ -129,7 +121,6 @@ Function_Write_Telex:	; Function 1
 	pop ebx
 
 	pop ebp
-	sub [gs:0], dword 6
 	ret
 
 	.Error1:
@@ -201,7 +192,7 @@ Function_Blit_text:	; Function 4
 	.Count equ dword [gs:ebp - 4]	   ; Count : Cardinal
 
 	push ebp
-	mov ebp, [gs:0]
+	add ebp, 12
 
 	push ebx
 	push ecx
@@ -245,7 +236,6 @@ Function_Blit_text:	; Function 4
 	pop ebx
 
 	pop ebp
-	sub [gs:0], dword 12
 	ret
 
 	restore .Src

@@ -57,9 +57,6 @@ Interface:
 	dd Function_Block_self
 
 Function_Init:
-	push ebp
-	mov ebp, [gs:0]
-
 	push ebx
 	push edi
 	push esi
@@ -84,7 +81,6 @@ Function_Init:
 	; Allocate Thread Table
 	mov [gs:ebp], dword 0
 	mov [gs:ebp + 4], dword SizeOf_Thread_Table
-	add [gs:0], dword 8
 	invoke ISystem.Allocate
 
 	test eax, eax
@@ -110,7 +106,6 @@ Function_Init:
 	lea eax, [ebx + Procedure_IRQ0]
 	mov [gs:ebp], byte $20
 	mov [gs:ebp + 1], eax
-	add [gs:0], dword 5
 	invoke IInterrupt.Install_ISR
 
 	sti
@@ -118,15 +113,13 @@ Function_Init:
 	pop esi
 	pop edi
 	pop ebx
-
-	pop ebp
 	ret
 
 Function_New_Thread:	 ; Function 1
 	.StartPoint equ dword [gs:ebp - 4]	  ; StartPoint : Address
 
 	push ebp
-	mov ebp, [gs:0]
+	add ebp, 4
 
 	push ebx
 	push ecx
@@ -161,7 +154,6 @@ Function_New_Thread:	 ; Function 1
 	; Allocate the stacks
 	mov [gs:ebp], dword $6000	; Size
 	mov [gs:ebp + 4], dword 2	; Type is stack
-	add [gs:0], dword 8
 	invoke ISystem.Allocate_Code
 
 	test eax, eax
@@ -197,7 +189,7 @@ Function_New_Thread:	 ; Function 1
 	mov [fs:ebx - $30], eax
 	mov [fs:ebx - $34], eax
 	mov [fs:ebx - $38], eax
-	mov [fs:ebx - $3C], eax
+	mov [fs:ebx - $3C], dword 16
 	mov [fs:ebx - $40], eax
 	mov [fs:ebx - $44], eax
 
@@ -236,7 +228,6 @@ Function_New_Thread:	 ; Function 1
 	pop ebx
 
 	pop ebp
-	sub [gs:0], dword 4
 	ret
 
 	.Error1:
@@ -255,7 +246,7 @@ Function_Start: 	; Function 2
 	.ThreadIdx equ dword [gs:ebp - 4]  ; ThreadIdx : Cardinal
 
 	push ebp
-	mov ebp, [gs:0]
+	add ebp, 4
 	push ebx
 
 	mov eax, .ThreadIdx
@@ -285,7 +276,6 @@ Function_Start: 	; Function 2
 	pop ebx
 
 	pop ebp
-	sub [gs:0], dword 4
 	ret
 
 	.Error1:
@@ -295,6 +285,7 @@ Function_Start: 	; Function 2
 	restore .ThreadIdx
 
 Function_Yield:        ; Function 3
+	push eax
 	push ebx
 	mov ebx, [fs:IThread]
 
@@ -305,14 +296,15 @@ Function_Yield:        ; Function 3
 		jmp .Spinlock
 
 	.Continue:
-	mov eax, [ss:esp + 4]
+	mov eax, [ss:esp + 8]
 	mov [fs:ebx + Var.EIP], eax
 
 	lea eax, [ebx + Procedure_Switch_Context]
-	mov [ss:esp + 4], eax
+	mov [ss:esp + 8], eax
 
 	.Return:
 	pop ebx
+	pop eax
 	ret
 
 Function_Block_self:	; Function 4
@@ -406,11 +398,11 @@ Procedure_IRQ0:
 	push ebx
 	mov ebx, [fs:IThread]
 
-	inc dword [fs:ebx + Var.TimeCount]
-	cmp dword [fs:ebx + Var.TimeCount], 18
-	jb .Return
+	;inc dword [fs:ebx + Var.TimeCount]
+	;cmp dword [fs:ebx + Var.TimeCount], 18
+	;jb .Return
 
-	mov dword [fs:ebx + Var.TimeCount], 0
+	;mov dword [fs:ebx + Var.TimeCount], 0
 
 	; Get lock 0
 	lock bts dword [fs:ebx + Var.Lock], 0
