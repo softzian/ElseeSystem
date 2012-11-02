@@ -109,8 +109,6 @@ Main_thread:
 	mov .Data, esi
 
 	.Message_loop:
-	hlt
-	Write_register ebx
 	mov eax, [fs:ebx + Var.Queue]
 	mov [gs:ebp], eax
 	invoke ISystem.Get_Message
@@ -310,52 +308,3 @@ Function_Switch_console:	; Function 4
 	ret
 
 	restore .Console
-
-Function_Cardinal_to_HexStr_32:
-	.Num equ dword [gs:ebp - 8]
-	.HexStr equ dword [gs:ebp - 4]
-
-	push ebp
-	add ebp, 8
-	push ebx
-	push ecx
-	push edx
-	push edi
-
-	mov edx, .Num
-	xor ebx, ebx
-	mov edi, .HexStr
-
-	mov cl, 7
-	.Loop:
-	mov eax, edx
-	shl cl, 2
-	shr eax, cl
-	shr cl, 2
-	and al, $F
-
-	cmp al, $A
-	jae .j1
-	add al, '0' - 0
-	jmp .j2
-	.j1: add al, 'A' - $A
-	.j2: inc ebx
-
-	mov [ds:edi + ebx - 1], al
-
-	.Continue_loop:
-	dec cl
-	jns .Loop
-
-	.Return:
-	xor eax, eax
-	pop edi
-	pop edx
-	pop ecx
-	pop ebx
-
-	pop ebp
-	ret
-
-	restore .Num
-	restore .HexStr

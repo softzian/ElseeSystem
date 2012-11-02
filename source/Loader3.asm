@@ -172,14 +172,14 @@ GDT:
 		db 0
 	.gdt_stack1:	; 4
 		dw $FFFE
-		dw $5000
+		dw $7000
 		db 0
 		db 10010110b
 		db 11001111b
 		db 0
 	.gdt_stack2:	; 5
 		dw 0
-		dw $5000
+		dw $4000
 		db 0
 		db 10010010b
 		db 11000000b

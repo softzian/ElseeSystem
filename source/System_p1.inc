@@ -148,7 +148,7 @@ Function_Allocate:    ; Function 2
 	call Function_Split_Entry
 
 	.Done:
-	mov eax, 1;[ss:_ModuleIdx] ; Active module address
+	mov eax, [ss:_ModuleIdx] ; Active module address
 	mov [ebx + ecx], eax
 
 	; Return new pointer

@@ -219,47 +219,86 @@ Function_Cardinal_to_HexStr_32:
 	restore .Num
 	restore .HexStr
 
-Procedure_INT_13:
-	cli
-	mov ecx, ebx
-	mov ebx, [fs:IInterrupt]
-
-	lea eax, [ebx + Static.Text]
+macro Write str, x
+{
+	lea eax, [str + 1]
 	mov [gs:ebp], eax
 	mov [gs:ebp + 4], dword $FFFE0000
-	mov [gs:ebp + 8], dword 31
+	xor eax, eax
+	mov al, byte [fs:str]
+	mov [gs:ebp + 8], eax
 	invoke ISystem.Copy_code_to_data
 
+	xor eax, eax
+	mov al, byte [fs:str]
 	mov [gs:ebp], dword $FFFE0000
-	mov [gs:ebp + 4], word 31
+	mov [gs:ebp + 4], ax
 	invoke IVideo.Write_Telex
 
-	mov eax, [ss:esp + 4]
+	mov eax, x
+	Write_register eax
+
+	invoke IVideo.New_Line
+}
+
+Print_Memory_Table:
+	xor ecx, ecx
+
+	.Loop:
+	;push dword ecx
+	;invoke IUtility.Write_Cardinal_Hex
+	;mov [esp - 1], byte ' '
+	;dec esp
+	;invoke IUtility.Write_Char
+
+	mov eax, [ds:$FFFFC000 + 4 + ecx]
+	Write_register eax
+
+	mov eax, [ds:$FFFFC000 + 4 + ecx + 4]
+	Write_register eax
+
+	mov eax, [ds:$FFFFC000 + 4 + ecx + 8]
 	Write_register eax
 
 	invoke IVideo.New_Line
 
-	lea eax, [ebx + Static.Text2]
-	mov [gs:ebp], eax
-	mov [gs:ebp + 4], dword $FFFE0000
-	mov [gs:ebp + 8], dword 11
-	invoke ISystem.Copy_code_to_data
+	add ecx, 12
+	cmp [ds:$FFFFC000 + 4 + ecx + 4], dword 0
+	jne .Loop
+	invoke IVideo.New_Line
+	ret
 
-	mov [gs:ebp], dword $FFFE0000
-	mov [gs:ebp + 4], word 11
-	invoke IVideo.Write_Telex
+Procedure_INT_13:
+	cli
 
-	xor eax, eax
-	mov ax, ss
-	Write_register ecx
+	invoke IVideo.Clear_Screen
+
+	mov ecx, ebx
+	mov ebx, [fs:IInterrupt]
+
+	Write ebx + Static.Text, [ss:esp + 4]
+	Write ebx + Static.Text2, [ss:_ModuleIdx]
+	Write ebx + Static.Text3, [ss:_ThreadIdx]
+	Write ebx + Static.Text4, ecx
+
+	xor ecx, ecx
+	.Loop:
+		mov eax, [gs:ecx]
+		Write_register eax
+		add ecx, 4
+		cmp ecx, $18
+		jbe .Loop
 
 	hlt
 
 Static:
 	.IRQMask1 db 0
 	.IRQMask2 db 0
-	.Text db 'General Protection Fault! EIP: '
-	.Text2 db 'ModuleIdx: '
+	.Text db 31,'General Protection Fault! EIP: '
+	.Text2 db 11,'ModuleIdx: '
+	.Text3 db 11,'ThreadIdx: '
+	.Text4 db 5,'EBX: '
+	.Text5 db 5,'EBP: '
 IDT:
 	repeat 256
 		dw 0

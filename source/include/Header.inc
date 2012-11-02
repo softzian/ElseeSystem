@@ -2,7 +2,7 @@ True = 1
 False = 0
 
 _Result = $FFFFFFF0
-_ModuleIdx = $FFFFFFFC
+_ModuleIdx = $FFFFFFEC
 _ThreadIdx = $FFFFFFE8
 _LDT = $20000
 
@@ -13,15 +13,13 @@ macro invoke x
 
 macro Write_register x
 {
+	push eax
 	mov [gs:ebp], x
 	mov [gs:ebp + 4], dword $FFFF0000
-	add [gs:0], dword 8
-	push eax
 	call Function_Cardinal_to_HexStr_32
 
 	mov [gs:ebp], dword $FFFF0000
 	mov [gs:ebp + 4], word 9
-	add [gs:0], dword 6
 	invoke IVideo.Write_Telex
 
 	pop eax

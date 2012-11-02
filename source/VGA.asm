@@ -206,10 +206,10 @@ Function_Blit_text:	; Function 4
 	xor esi, esi
 
 	.Loop:
-		mov eax, [ebx]
+		mov eax, [ds:ebx]
 		mov [fs:$B8000 + edx * 2], al
 
-		mov esi, [ebx + 4]
+		mov esi, [ds:ebx + 4]
 		mov eax, esi
 		call Function_15bit_RGB_to_4bit_RGBI
 		mov edi, eax
