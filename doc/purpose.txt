@@ -1,7 +1,0 @@
-The main purpose of this project to make programming in conventional machine level (Instruction Set Architecture level) more easy.
-
-An OS stays at the top of the conventional machine level. It provided some abtraction to make programming more simple and easy. But along with abtraction, it also hide or protect the conventional machine (the ISA) away from the developer. Only some OS that provide abtraction without hiding the layer below it, for example, MS-DOS and other alike.
-
-So I decided to write a set of modules (library) that stays at OS layer, does the OS job but doesn't hide away or restrict access to the layer below it (cross-layer access). You can follow or not follow its rule, you can use it to load your program from the network and then do not need to care about it anymore.
-
-Today people don't programming at the conventional machine level (the ISA level) anymore because productivity is very low, so this project practical value is unsignificant. But in order to understand the computer architecture more deeply, programming at the conventional level is a must. With this library and an assembler, you can get your program run directly on the computer more easy.

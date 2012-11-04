@@ -30,6 +30,8 @@ IVideo.Write_Telex = IVideo + 4
 IVideo.Clear_Screen = IVideo + 8
 IVideo.New_Line = IVideo + 12
 IVideo.Blit_text = IVideo + 16
+IVideo.Write_char = IVideo + 20
+IVideo.Scroll_screen = IVideo + 24
 
 ISystem = $100000
 ISystem.Create_Region = ISystem + 4
