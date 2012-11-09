@@ -18,8 +18,9 @@ IVideo = $100800
 ; Function 2: Clear_Screen
 ; Function 3: New_Line
 
-; Function 4: Blit_text (in Src : Buffer; Cursor, Count : Cardinal)
-; Function 5: Blit_char (Char : UTF32_char; Attribute, Cursor : Cardinal)
+; Function 4: Write_text_line (in Src : Buffer; X, Y : Card16; Count : Cardinal)
+; Function 5: Write_text_char (Char : UTF32_char; Attribute : Cardinal; X, Y : Card16)
+; Function 6: Scroll_screen (Attribute : Cardinal)
 
 jmp Function_Init
 Interface:
@@ -27,14 +28,16 @@ Interface:
 	dd Function_Clear_Screen
 	dd Function_New_Line
 
-	dd Function_Blit_text
-	dd Function_Write_char
+	dd Function_Write_text_line
+	dd Function_Write_text_char
 	dd Function_Scroll_screen
 
 Const:
 	Write_Flag = 0
 Error_Code:
 	INVALID_COUNT = -1
+	INVALID_CURSOR = -2
+	VIDEO_BUFFER_OVERFLOW = -3
 
 Function_Init:
 	push ebx
@@ -189,9 +192,10 @@ Function_New_Line:	; Function 3
 	pop ebx
 	ret
 
-Function_Blit_text:	; Function 4
+Function_Write_text_line:	; Function 4
 	.Src equ dword [gs:ebp - 12]	   ; in Src : Buffer
-	.Cursor equ dword [gs:ebp - 8]	  ; Cursor : Cardinal
+	.X equ word [gs:ebp - 8]			; X : Card16
+	.Y equ word [gs:ebp - 6]			; Y : Card16
 	.Count equ dword [gs:ebp - 4]	   ; Count : Cardinal
 
 	push ebp
@@ -200,51 +204,78 @@ Function_Blit_text:	; Function 4
 	push ebx
 	push ecx
 	push edx
-	push esi
-	push edi
+	
+	mov edx, .Count
+	test edx, edx
+	jz .Error1
 
+	mov ebx, [fs:IVideo]
+	mov cx, .X
+	mov ax, .Y
+	
+	call Check_cursor
+	test al, al
+	jnz .Error2
+	
+	call Calculate_cursor
+	
+	lea eax, [ecx + edx]
+	cmp eax, [fs:ebx + Var.Screen_size]
+	jae .Error3
+	
 	mov ebx, .Src
-	mov edx, .Cursor
-	mov ecx, .Count
-
-	.Loop:
-		mov eax, [ds:ebx]
-		mov [fs:$B8000 + edx * 2], al
-
-		mov esi, [ds:ebx + 4]
-		mov eax, esi
-		call Function_15bit_RGB_to_4bit_RGBI
-		mov edi, eax
-		mov eax, esi
-		shr eax, 15
-		call Function_15bit_RGB_to_4bit_RGBI
-		shl al, 4
-		or eax, edi
-
-		mov [fs:$B8000 + edx * 2 + 1], al
-
-		inc edx
-		add ebx, 8
-		dec ecx
-		jnz .Loop
+	call Write_text_line
 
 	xor eax, eax
 
 	.Return:
-	pop edi
-	pop esi
 	pop edx
 	pop ecx
 	pop ebx
 
 	pop ebp
 	ret
+	
+	.Error1:
+	mov eax, INVALID_COUNT
+	jmp .Return
+	.Error2:
+	mov eax, INVALID_CURSOR
+	jmp .Return
+	.Error3:
+	mov eax, VIDEO_BUFFER_OVERFLOW
+	jmp .Return
 
 	restore .Src
-	restore .Cursor
+	restore .X
+	restore .Y
 	restore .Count
+	
+Write_text_line:
+	; EBX = Src
+	; ECX = Cursor
+	; EDX = Count
+	
+	push esi
+	
+	xor esi, esi
+	shl ecx, 1
+	.Loop:
+		mov eax, [ds:ebx + esi * 8]
+		mov [fs:$B8000 + ecx + esi * 2], al
+		
+		mov eax, [ds:ebx + esi * 8 + 4]
+		call Function_32bit_attr_to_VGA_attr
+		mov [fs:$B8000 + ecx + esi * 2 + 1], al
+		
+		inc esi
+		cmp esi, edx
+		jb .Loop
+		
+	pop esi
+	ret
 
-Function_Write_char:	 ; Function 5
+Function_Write_text_char:	 ; Function 5
 	.Char equ dword [gs:ebp - 12]		; Char : UTF32_char
 	.Attribute equ dword [gs:ebp - 8]	; Attribute : Cardinal
 	.X equ word [gs:ebp - 4]		; X : Card16
@@ -257,35 +288,25 @@ Function_Write_char:	 ; Function 5
 	push ecx
 	push edx
 
-	mov ebx, [cs:IVideo]
-	xor edx, edx
-
-	mov dx, .X
+	mov ebx, [fs:IVideo]
+	mov cx, .X
 	mov ax, .Y
 
-	cmp dx, $100
-	jae .Return
-	cmp ax, $100
-	jae .Return
-
-	mov cl, [cs:ebx + Var.Width]
-	cmp dl, cl
-	jae .Return
-	cmp al, [cs:ebx + Var.Height]
-	jae .Return
-
-	mul cl
-	add dx, ax
+	call Check_cursor
+	test ah, ah
+	jnz .Error1
+	
+	call Calculate_cursor
 
 	mov eax, .Char
-	mov [fs:$80000 + edx * 2], al
-	mov [fs:$B8000 + edx * 2], al
+	mov [fs:$80000 + ecx * 2], al
+	mov [fs:$B8000 + ecx * 2], al
 
 	mov eax, .Attribute
 	call Function_32bit_attr_to_VGA_attr
 
-	mov [fs:$80000 + edx * 2 + 1], al
-	mov [fs:$B8000 + edx * 2 + 1], al
+	mov [fs:$80000 + ecx * 2 + 1], al
+	mov [fs:$B8000 + ecx * 2 + 1], al
 
 	xor eax, eax
 
@@ -296,12 +317,49 @@ Function_Write_char:	 ; Function 5
 
 	pop ebp
 	ret
+	
+	.Error1:
+	mov eax, INVALID_CURSOR
+	jmp .Return
 
 	restore .Char
 	restore .Attribute
 	restore .X
 	restore .Y
+	
+Check_cursor:
+	; CX = X
+	; AX = Y
+	; EBX = [fs:IVideo]
+	; Result -> AH
 
+	test ch, ch
+	jnz .Error
+	test ah, ah
+	jnz .Error
+
+	cmp cl, [fs:ebx + Var.Width]
+	jae .Error
+	cmp al, [fs:ebx + Var.Height]
+	jae .Error
+	
+	ret
+	
+	.Error:
+	mov ah, 1
+	ret
+
+Calculate_cursor:
+	; CX = X
+	; AX = Y
+	; EBX = [fs:IVideo]
+	; Result -> ECX
+	
+	mul byte [fs:ebx + Var.Width]
+	add ecx, eax
+	and $FFFF, ecx
+	ret
+	
 Function_32bit_attr_to_VGA_attr:
 	; EAX: Input
 	; AL : Output
