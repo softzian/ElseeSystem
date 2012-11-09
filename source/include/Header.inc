@@ -79,6 +79,6 @@ IConvert.UTF16_to_raw_UTF32 = IConvert + 4
 
 IConsole = $100E00
 IConsole.Alloc_console = IConsole + 4
-IConsole.Write_console = IConsole + 8
-IConsole.Read_console = IConsole + 12
+IConsole.Write_char = IConsole + 8
+IConsole.Read_char = IConsole + 12
 IConsole.Switch_console = IConsole + 16

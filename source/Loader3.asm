@@ -227,21 +227,11 @@ Begin:
 	jmp Halt32
 
 Main_thread:
-	mov ecx, 0
-	mov al, '$'
-	mov ah, 1010b
-	.Loop:
-		mov [fs:$B8000 + ecx], al
-		mov [fs:$B8001 + ecx], ah
+	mov eax, [cs:Var.Console]
+	mov [gs:ebp], eax
+	invoke IConsole.Read_char
 
-		repeat 9
-		hlt
-		end repeat
-
-		add ecx, 2
-		cmp ecx, 4000
-		jae Main_thread
-		jmp .Loop
+	jmp Main_thread
 
 Halt32:
 	hlt

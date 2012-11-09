@@ -61,6 +61,13 @@ Init_base_system:
 	mov [gs:ebp], eax
 	invoke IConsole.Switch_console
 
+	mov [gs:ebp], dword Main_thread
+	invoke IThread.New_Thread
+
+	mov eax, [ss:_Result]
+	mov [gs:ebp], eax
+	invoke IThread.Start
+
 	; Enable IRQ0, start threads
 	mov [gs:ebp], byte 0
 	invoke IInterrupt.Enable_IRQ
