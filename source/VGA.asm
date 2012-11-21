@@ -230,7 +230,7 @@ Function_Write_text_line:	; Function 4
 	
 	lea eax, [ecx + edx]
 	cmp ax, [fs:ebx + Var.Screen_size]
-	jae .Error3
+	ja .Error3
 	
 	mov ebx, .Src
 	call Write_text_line

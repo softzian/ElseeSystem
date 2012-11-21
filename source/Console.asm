@@ -196,7 +196,7 @@ Function_Alloc_console: 	; Function 1
 	mov ebx, [ss:_Result]
 
 	; Step 3 - Create screen buffer
-	mov [gs:ebp], dword (32 + 2000 * 8)
+	mov [gs:ebp], dword (32 + 2106 * 8)
 	invoke ISystem.Allocate
 
 	test eax, eax
@@ -212,16 +212,16 @@ Function_Alloc_console: 	; Function 1
 
 	mov [ds:eax + Screen_cursor], dword 0			; Cursor
 	mov [ds:eax + Screen_offset], dword 0			; Offset
-	mov [ds:eax + Screen_attribute], dword $3E007FFF	; Default attribute
-	mov [ds:eax + Screen_size], dword 0200			; Size in character
-	mov [ds:eax + Screen_width], word 20			; Width
-	mov [ds:eax + Screen_height], word 10			; Height
-	mov [ds:eax + Screen_X], word 0 			; X
-	mov [ds:eax + Screen_Y], word 0 			; Y
-	mov [ds:eax + Screen_rect], word 5
-	mov [ds:eax + Screen_rect + 2], word 5
-	mov [ds:eax + Screen_rect + 4], word 20
-	mov [ds:eax + Screen_rect + 6], word 10
+	mov [ds:eax + Screen_attribute], dword $000003E0	; Default attribute
+	mov [ds:eax + Screen_size], dword 2106			; Size in character
+	mov [ds:eax + Screen_width], word 81			; Width
+	mov [ds:eax + Screen_height], word 26			; Height
+	mov [ds:eax + Screen_X], word 1 			; X
+	mov [ds:eax + Screen_Y], word 1 			; Y
+	mov [ds:eax + Screen_rect], word 0
+	mov [ds:eax + Screen_rect + 2], word 0
+	mov [ds:eax + Screen_rect + 4], word 80
+	mov [ds:eax + Screen_rect + 6], word 25
 
 	mov [gs:ebp], esi
 	invoke IData.Finish_access_table
@@ -489,6 +489,9 @@ Update_screen:
 		mov [gs:ebp + 8], eax
 		invoke IVideo.Write_text_line
 
+		test eax, eax
+		jnz .Error
+
 		inc ecx
 		cmp ecx, edx
 		jae .Return
@@ -506,6 +509,11 @@ Update_screen:
 	pop edx
 	pop ecx
 	ret
+
+	.Error:
+	Write_register eax
+	cli
+	hlt
 
 Calculate_offset:
 	; EBX = Screen
@@ -619,3 +627,52 @@ Function_Release_console:  ; Function 6
 	jmp .Return
 
 	restore .Console
+
+Function_Cardinal_to_HexStr_32:
+	.Num equ dword [gs:ebp - 8]
+	.HexStr equ dword [gs:ebp - 4]
+
+	push ebp
+	add ebp, 8
+	push ebx
+	push ecx
+	push edx
+	push edi
+
+	mov edx, .Num
+	xor ebx, ebx
+	mov edi, .HexStr
+
+	mov cl, 7
+	.Loop:
+	mov eax, edx
+	shl cl, 2
+	shr eax, cl
+	shr cl, 2
+	and al, $F
+
+	cmp al, $A
+	jae .j1
+	add al, '0' - 0
+	jmp .j2
+	.j1: add al, 'A' - $A
+	.j2: inc ebx
+
+	mov [ds:edi + ebx - 1], al
+
+	.Continue_loop:
+	dec cl
+	jns .Loop
+
+	.Return:
+	xor eax, eax
+	pop edi
+	pop edx
+	pop ecx
+	pop ebx
+
+	pop ebp
+	ret
+
+	restore .Num
+	restore .HexStr
