@@ -14,6 +14,7 @@ include 'include\errcode.inc'
 use32
 
 IVideo = $100800
+; The first three functions are for debug purpose
 ; Function 1: Write_Telex (var Text : Array of Char; Count : Word)
 ; Function 2: Clear_Screen
 ; Function 3: New_Line
@@ -21,6 +22,8 @@ IVideo = $100800
 ; Function 4: Write_text_line (in Src : Buffer; X, Y : Card16; Count : Cardinal)
 ; Function 5: Write_text_char (Char : UTF32_char; Attribute : Cardinal; X, Y : Card16)
 ; Function 6: Scroll_screen (Attribute : Cardinal)
+
+; Function 7: Get_display_size : Size_record
 
 jmp Function_Init
 Interface:
@@ -31,6 +34,8 @@ Interface:
 	dd Function_Write_text_line
 	dd Function_Write_text_char
 	dd Function_Scroll_screen
+
+	dd Function_Get_display_size
 
 Const:
 	Write_Flag = 0
@@ -58,7 +63,7 @@ Function_Init:
 		add edi, 4
 		add esi, 4
 
-		cmp edi, IVideo + 4 * 6
+		cmp edi, IVideo + 4 * 7
 		jna .Loop
 
 	pop esi
@@ -193,10 +198,10 @@ Function_New_Line:	; Function 3
 	ret
 
 Function_Write_text_line:	; Function 4
-	.Src equ dword [gs:ebp - 12]	   ; in Src : Buffer
-	.X equ word [gs:ebp - 8]			; X : Card16
-	.Y equ word [gs:ebp - 6]			; Y : Card16
-	.Count equ dword [gs:ebp - 4]	   ; Count : Cardinal
+	.Src equ dword [gs:ebp - 12]	; in Src : Buffer
+	.X equ word [gs:ebp - 8]	; X : Card16
+	.Y equ word [gs:ebp - 6]	; Y : Card16
+	.Count equ dword [gs:ebp - 4]	; Count : Cardinal
 
 	push ebp
 	add ebp, 12
@@ -212,15 +217,15 @@ Function_Write_text_line:	; Function 4
 	mov ebx, [fs:IVideo]
 	mov cx, .X
 	mov ax, .Y
-	
+
 	call Check_cursor
-	test al, al
+	test ah, ah
 	jnz .Error2
 	
 	call Calculate_cursor
 	
 	lea eax, [ecx + edx]
-	cmp eax, [fs:ebx + Var.Screen_size]
+	cmp ax, [fs:ebx + Var.Screen_size]
 	jae .Error3
 	
 	mov ebx, .Src
@@ -263,10 +268,12 @@ Write_text_line:
 	.Loop:
 		mov eax, [ds:ebx + esi * 8]
 		mov [fs:$B8000 + ecx + esi * 2], al
+		mov [fs:$80000 + ecx + esi * 2], al
 		
 		mov eax, [ds:ebx + esi * 8 + 4]
 		call Function_32bit_attr_to_VGA_attr
 		mov [fs:$B8000 + ecx + esi * 2 + 1], al
+		mov [fs:$80000 + ecx + esi * 2 + 1], al
 		
 		inc esi
 		cmp esi, edx
@@ -278,8 +285,8 @@ Write_text_line:
 Function_Write_text_char:	 ; Function 5
 	.Char equ dword [gs:ebp - 12]		; Char : UTF32_char
 	.Attribute equ dword [gs:ebp - 8]	; Attribute : Cardinal
-	.X equ word [gs:ebp - 4]		; X : Card16
-	.Y equ word [gs:ebp - 2]		; Y : Card16
+	.X equ word [gs:ebp - 4]			; X : Card16
+	.Y equ word [gs:ebp - 2]			; Y : Card16
 
 	push ebp
 	add ebp, 12
@@ -357,7 +364,7 @@ Calculate_cursor:
 	
 	mul byte [fs:ebx + Var.Width]
 	add ecx, eax
-	and $FFFF, ecx
+	and ecx, $FFFF
 	ret
 	
 Function_32bit_attr_to_VGA_attr:
@@ -488,6 +495,22 @@ Function_Scroll_screen: 	; Function 6
 	ret
 
 	restore .Attribute
+	
+Function_Get_display_size:	; Function 7
+	push ebx
+	
+	mov ebx, [fs:IVideo]
+	xor eax, eax
+
+	mov al, [fs:ebx + Var.Width]
+	mov [ss:_Result], ax
+	mov al, [fs:ebx + Var.Height]
+	mov [ss:_Result + 2], ax
+	
+	xor eax, eax
+	
+	pop ebx
+	ret
 
 Var:
 	.Width db 80

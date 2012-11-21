@@ -16,6 +16,24 @@
 ;               Size : Cardinal
 ;       End
 
+Get_lock_0:
+	mov ebx, [fs:ISystem]
+
+	.Spinlock:
+	lock bts dword [fs:ebx + Var.Lock], 0
+	jnc .Return
+
+	invoke IThread.Yield
+	jmp .Spinlock
+
+	.Return:
+	ret
+
+Release_lock_0:
+	mov ebx, [fs:ISystem]
+	lock btr dword [fs:ebx + Var.Lock], 0
+	ret
+
 Function_Create_Region:  ; Function 1
 	.Start equ dword [gs:ebp - 12]
 	.Limit equ dword [gs:ebp - 8]
@@ -70,11 +88,10 @@ Function_Create_Region:  ; Function 1
 	restore .Type
 
 Function_Allocate:    ; Function 2
-	.Region equ dword [gs:ebp - 8] ; Region : Address
 	.Size equ dword [gs:ebp - 4] ; Size : Cardinal
 
 	push ebp
-	add ebp, 8
+	add ebp, 4
 
 	push ebx
 	push ecx
@@ -82,10 +99,10 @@ Function_Allocate:    ; Function 2
 	push esi
 	push edi
 
-	cmp .Region, 0
-	jne .Error1	; Region type is not 0
+	call Get_lock_0
 
 	; Step 1 - Find free entry with enough size (first-fit)
+	.Step1:
 	xor ecx, ecx
 	mov eax, .Size
 	mov ebx, Region_Address + SizeOf_Region_Header
@@ -157,6 +174,8 @@ Function_Allocate:    ; Function 2
 	xor eax, eax
 
 	.Return:
+	call Release_lock_0
+
 	pop edi
 	pop esi
 	pop edx
@@ -166,15 +185,10 @@ Function_Allocate:    ; Function 2
 	pop ebp
 	ret
 
-	.Error1:
-	mov eax, SUBINTERFACE_UNAVAILABLE
-	jmp .Return
 	.Error2:
 	mov eax, NO_FREE_MEMORY
 	jmp .Return
 
-	restore .Ptr
-	restore .Region
 	restore .Size
 
 Function_Split_Entry:	; Parameter is the size we want to split
@@ -220,19 +234,18 @@ Function_Split_Entry:	; Parameter is the size we want to split
 	jmp .Return
 
 Function_Deallocate:	; Function 3
-	.Region equ dword [gs:ebp - 8] ; Region : Address
 	.Ptr equ dword [gs:ebp - 4] ; Ptr : Address
 
 	push ebp
-	add ebp, 8
+	add ebp, 4
 	push ebx
 	push ecx
 	push edx
 
-	cmp .Region, 0
-	jne .Error1	; This region isn't Region 0
+	call Get_lock_0
 
 	; Step 1 - Find Entry
+	.Step1:
 	mov eax, .Ptr
 	mov ebx, Region_Address + SizeOf_Region_Header
 	xor ecx, ecx
@@ -257,22 +270,19 @@ Function_Deallocate:	; Function 3
 	xor eax, eax
 
 	.Return:
+	call Release_lock_0
+
 	pop edx
 	pop ecx
 	pop ebx
 	pop ebp
 	ret
 
-	.Error1:
-	mov eax, SUBINTERFACE_UNAVAILABLE
-	jmp .Return
-
 	.Not_Found:
 	mov eax, ENTRY_NOT_FOUND
 	jmp .Return
 
 	restore .Ptr
-	restore .Region
 
 Function_Merge_Entry:	; Merge entries around ECX
 	; Step 1 - Check the previous entry
@@ -375,6 +385,9 @@ Function_Mark_Memory:	; Function 4
 	push edx
 	push esi
 
+	call Get_lock_0
+
+	.Begin:
 	mov eax, .Limit
 	mov edx, .Start
 	cmp eax, edx
@@ -434,6 +447,8 @@ Function_Mark_Memory:	; Function 4
 	xor eax, eax
 
 	.Return:
+	call Release_lock_0
+
 	pop esi
 	pop edx
 	pop ecx

@@ -15,9 +15,12 @@ use32
 
 IConsole = $100E00
 ; Function 1: Alloc_console : Handle_type
-; Function 2: Write_console_char (Console : Handle_type; Char : UTF32_char)
-; Function 3: Read_console_char (Console : Handle_type) : UTF32_char;
+; Function 2: Write_console_char (Console : Address; Char : UTF32_char)
+; Function 3: Read_console_char (Console : Address) : UTF32_char;
 ; Function 4: Switch_console (Console : Handle_type)
+
+; Function 5: Lock_console (Console : Handle_type) : Address
+; Function 6: Release_console (Console : Handle_type)
 
 jmp Function_Init
 Interface:
@@ -26,11 +29,15 @@ Interface:
 	dd Function_Read_console_char
 	dd Function_Switch_console
 
+	dd Function_Lock_console
+	dd Function_Release_console
+
 Const:
 	; Console record
 	Console_screen = 8
 	Console_input = 4
 	Console_lock = 0
+	Console_lock_owner = 12
 
 	; Screen Buffer record
 	Screen_cursor = 0
@@ -46,11 +53,13 @@ Error_Code:
 	CANNOT_ALLOC_MEMORY = -1
 	STRING_LENGTH_IS_ZERO = -2
 	CANNOT_ALLOC_QUEUE = -3
+	YOU_DO_NOT_OWN_LOCK = -4
+	CONSOLE_TABLE_FULL = -5
 
 Var:
+	.Console_table dd 0
 	.Active_console dd 0
 	.Queue dd 0
-	.Lock dd 0
 
 Function_Init:
 	push ebx
@@ -71,9 +80,18 @@ Function_Init:
 		add edi, 4
 		add esi, 4
 
-		cmp edi, IConsole + 4 * 4
+		cmp edi, IConsole + 4 * 6
 		jna .Loop
 
+	; Create console table
+	mov [gs:ebp], dword 16
+	mov [gs:ebp + 4], dword 16
+	invoke IData.Create_table
+
+	mov eax, [ss:_Result]
+	mov [fs:ebx + Var.Console_table], eax
+
+	; Create input queue
 	mov [gs:ebp], dword 1024
 	invoke ISystem.Create_Message_Queue
 
@@ -83,6 +101,7 @@ Function_Init:
 	mov [gs:ebp], eax
 	invoke IKeyboard.Set_target_queue
 
+	; Create processing thread
 	lea eax, [ebx + Main_thread]
 	mov [gs:ebp], eax
 	invoke IThread.New_Thread
@@ -99,10 +118,11 @@ Function_Init:
 
 Main_thread:
 	mov ebx, [fs:IConsole]
-	mov esi, [fs:ebx + Var.Queue]
+	mov edi, [fs:ebx + Var.Queue]
+	mov esi, [fs:ebx + Var.Console_table]
 
 	.Message_loop:
-	mov [gs:ebp], esi
+	mov [gs:ebp], edi
 	invoke ISystem.Get_Message
 
 	test eax, eax
@@ -112,23 +132,44 @@ Main_thread:
 	mov ecx, [ss:_Result + 4]
 	mov edx, [ss:_Result + 8]
 
-	mov edi, [fs:ebx + Var.Active_console]
-	mov edi, [ds:edi + Console_input]
-
-	mov [gs:ebp], edi
 	mov [gs:ebp + 4], eax
 	mov [gs:ebp + 8], ecx
 	mov [gs:ebp + 12], edx
+
+	mov eax, [fs:ebx + Var.Active_console]
+	mov eax, [ds:eax + Console_input]
+
+	mov [gs:ebp], eax
 	invoke ISystem.Send_Message
 
 	.Wait:
 	invoke IThread.Yield
 	jmp .Message_loop
 
+
 Function_Alloc_console: 	; Function 1
 	push ebx
 	push ecx
+	push edx
+	push esi
 
+	; Step 1 - Add an entry in console table
+	mov ebx, [fs:IConsole]
+	mov esi, [fs:ebx + Var.Console_table]
+
+	mov [gs:ebp], esi
+	invoke IData.Access_table
+
+	mov [gs:ebp], esi
+	invoke IData.Add_table_entry
+
+	test eax, eax
+	jnz .Error3
+
+	mov edx, [ss:_Result]
+	mov ecx, [ss:_Result + 4]
+
+	; Step 2 - Create input message queue
 	mov [gs:ebp], dword 1024
 	invoke ISystem.Create_Message_Queue
 
@@ -137,24 +178,20 @@ Function_Alloc_console: 	; Function 1
 
 	mov ebx, [ss:_Result]
 
-	mov [gs:ebp], dword 0
-	mov [gs:ebp + 4], dword 16
+	; Step 3 - Create screen buffer
+	mov [gs:ebp], dword (24 + 2000 * 8)
 	invoke ISystem.Allocate
 
 	test eax, eax
 	jnz .Error1
 
-	mov ecx, [ss:_Result]
-
-	mov [gs:ebp], dword 0
-	mov [gs:ebp + 4], dword (24 + 2000 * 8)
-	invoke ISystem.Allocate
-
 	mov eax, [ss:_Result]
 
-	mov [ds:ecx + Console_lock], dword 0   ; Lock
-	mov [ds:ecx + Console_input], ebx   ; Input queue
-	mov [ds:ecx + Console_screen], eax   ; Screen buffer
+	; Step 4 - Finish
+	mov [ds:esi + ecx + Console_lock], dword 0		; Lock
+	mov [ds:esi + ecx + Console_lock_owner], dword 0	; The thread that lock this console
+	mov [ds:esi + ecx + Console_input], ebx 		; Input queue
+	mov [ds:esi + ecx + Console_screen], eax		; Screen buffer
 
 	mov [ds:eax + Screen_cursor], dword 0			; Cursor
 	mov [ds:eax + Screen_offset], dword 0			; Offset
@@ -165,23 +202,32 @@ Function_Alloc_console: 	; Function 1
 	mov [ds:eax + Screen_X], word 0 			; X
 	mov [ds:eax + Screen_Y], word 0 			; Y
 
-	mov [ss:_Result], ecx
+	mov [gs:ebp], esi
+	invoke IData.Finish_access_table
+
+	mov [ss:_Result], edx
 	xor eax, eax
 
 	.Return:
+	pop esi
+	pop edx
 	pop ecx
 	pop ebx
 	ret
 
 	.Error1:
-	mov [gs:ebp], dword 0
-	mov [gs:ebp + 4], ebx
-	invoke ISystem.Deallocate
 	mov eax, CANNOT_ALLOC_MEMORY
 	jmp .Return
 
 	.Error2:
 	mov eax, CANNOT_ALLOC_QUEUE
+	jmp .Return
+
+	.Error3:
+	mov [gs:ebp], esi
+	invoke IData.Finish_modify_table
+
+	mov eax, CONSOLE_TABLE_FULL
 	jmp .Return
 
 Function_Write_console_char:		; Function 2
@@ -196,7 +242,16 @@ Function_Write_console_char:		; Function 2
 	push esi
 	push edi
 
-	mov edi, .Console
+	mov esi, [fs:IConsole]
+	mov esi, [fs:esi + Var.Console_table]
+	mov eax, .Console
+	call Translate_console_handle
+
+	mov ecx, [ss:_ThreadIdx]
+	cmp [ds:eax + Console_lock_owner], ecx
+	jne .Error1
+
+	mov edi, eax
 	mov eax, .Char
 	call Write_console_char
 
@@ -211,6 +266,10 @@ Function_Write_console_char:		; Function 2
 	pop ebp
 	ret
 
+	.Error1:
+	mov eax, YOU_DO_NOT_OWN_LOCK
+	jmp .Return
+
 	restore .Console
 	restore .Char
 
@@ -218,63 +277,38 @@ Write_console_char:
 	; EDI : Console
 	; EAX : Char
 
-	.Spinlock:
-		lock bts dword [ds:edi + Console_lock], 0
-		jnc .Begin
-		invoke IThread.Yield
-		jmp .Spinlock
-
 	.Begin:
 	mov ebx, [ds:edi + Console_screen]
 	call Write_console_char_p1
 
 	cmp al, 2
-	ja .Release_lock
+	ja .Return
 
 	mov esi, [cs:IConsole]
 	cmp edi, [cs:esi + Var.Active_console]
-	jne .Release_lock
+	jne .Return
 
 	test al, al
 	jz .Next
 
 	mov esi, eax
+	
 	mov eax, [ds:ebx + Screen_attribute]
 	mov [gs:ebp], eax
 	invoke IVideo.Scroll_screen
+	
 	mov eax, esi
 
 	.Next:
 	cmp al, 2
-	je .Release_lock
+	je .Return
 
 	mov eax, [ss:_Result]
-	xor edx, edx
-	xor ecx, ecx
-	mov cx, [ds:ebx + Screen_width]
-	div ecx
-
-	mov ecx, eax
-	cmp dx, [ds:ebx + Screen_X]
-	jb .Release_lock
-	cmp cx, [ds:ebx + Screen_Y]
-	jb .Release_lock
-	sub dx, [ds:ebx + Screen_X]
-	sub cx, [ds:ebx + Screen_Y]
-
 	mov esi, [ss:_Result + 4]
-	mov eax, [ds:ebx + 24 + esi * 8]
-	mov esi, [ds:ebx + 24 + esi * 8 + 4]
+	
+	call Update_char
 
-	mov [gs:ebp], eax
-	mov [gs:ebp + 4], esi
-	mov [gs:ebp + 8], dx
-	mov [gs:ebp + 10], cx
-	invoke IVideo.Write_char
-
-	.Release_lock:
-	lock btr dword [ds:edi + Console_lock], 0
-	ret
+	.Return: ret
 
 Write_console_char_p1:
 	; EBX : Screen
@@ -391,8 +425,38 @@ Check_cursor:
 	.no_scroll:
 	xor al, al
 	ret
+	
+Update_char:	; Update one position in screen buffer to display
+	; EAX = cursor
+	; ESI = offset
+	; EBX = Screen
+	
+	xor edx, edx
+	xor ecx, ecx
+	mov cx, [ds:ebx + Screen_width]
+	div ecx
 
-Function_Read_console_char:
+	mov ecx, eax
+	cmp dx, [ds:ebx + Screen_X]
+	jb .Return
+	cmp cx, [ds:ebx + Screen_Y]
+	jb .Return
+	sub dx, [ds:ebx + Screen_X]
+	sub cx, [ds:ebx + Screen_Y]
+
+	mov eax, [ds:ebx + 24 + esi * 8]
+	mov esi, [ds:ebx + 24 + esi * 8 + 4]
+
+	mov [gs:ebp], eax
+	mov [gs:ebp + 4], esi
+	mov [gs:ebp + 8], dx
+	mov [gs:ebp + 10], cx
+	invoke IVideo.Write_text_char
+	
+	.Return:
+	ret
+
+Function_Read_console_char:	; Function 3
 	.Console equ dword [gs:ebp - 4]
 	.t equ dword [gs:ebp - 4]
 
@@ -404,7 +468,16 @@ Function_Read_console_char:
 	push esi
 	push edi
 
-	mov ebx, .Console
+	mov esi, [fs:IConsole]
+	mov esi, [fs:esi + Var.Console_table]
+	mov eax, .Console
+	call Translate_console_handle
+
+	mov ecx, [ss:_ThreadIdx]
+	cmp [ds:eax + Console_lock_owner], ecx
+	jne .Error1
+
+	mov ebx, eax
 	call Read_console_char
 
 	mov edi, ebx
@@ -434,17 +507,15 @@ Function_Read_console_char:
 	pop ebp
 	ret
 
+	.Error1:
+	mov eax, YOU_DO_NOT_OWN_LOCK
+	jmp .Return
+
 	restore .Console
 	restore .t
 
 Read_console_char:
 	; EBX : Console
-
-	.Spinlock:
-		lock bts dword [ds:ebx + Console_lock], 1
-		jnc .Begin
-		invoke IThread.Yield
-		jmp .Spinlock
 
 	.Begin:
 	mov eax, [ds:ebx + Console_input]
@@ -459,18 +530,15 @@ Read_console_char:
 
 	mov eax, [ss:_Result]
 	cmp eax, $E000
-	jb .Release_lock
+	jb .Return
 	cmp eax, $F8FF
-	ja .Release_lock
+	ja .Return
 
 	.Wait:
 	invoke IThread.Yield
 	jmp .Begin
 
-	.Release_lock:
-	lock btr dword [ds:ebx + Console_lock], 1
-
-	ret
+	.Return: ret
 
 Function_Switch_console:	; Function 4
 	.Console equ dword [gs:ebp - 4]    ; Console : Handle_type
@@ -479,75 +547,296 @@ Function_Switch_console:	; Function 4
 	add ebp, 4
 	push ebx
 	push ecx
-
+	push esi
+	
 	mov ebx, [fs:IConsole]
-	mov ecx, [fs:ebx + Var.Active_console]
+
+	mov esi, [fs:ebx + Var.Console_table]
+	mov [gs:ebp], esi
+	invoke IData.Modify_table
+
 	mov eax, .Console
+	call Translate_console_handle
+
+	mov ecx, [fs:ebx + Var.Active_console]
+
 	cmp ecx, eax
 	je .Return
 
-	.Spinlock1:
-		lock bts dword [fs:ebx + Var.Lock], 0
-		jnc .Spinlock2
-		invoke IThread.Yield
-		jmp .Spinlock1
-
-	.Spinlock2:
-		lock bts dword [ds:ecx + Console_lock], 0
-		jnc .Spinlock3
-		invoke IThread.Yield
-		jmp .Spinlock2
-
-	.Spinlock3:
-		lock bts dword [ds:ecx + Console_lock], 1
-		jnc .Begin
-		invoke IThread.Yield
-		jmp .Spinlock3
-
 	.Begin:
 	mov [fs:ebx + Var.Active_console], eax
-
+	
 	mov ebx, [ds:eax + Console_screen]
-	mov eax, [ds:eax + Screen_size]
-
-
-
+	call Update_screen
 
 	.Done:
-	mov ebx, [fs:IConsole]
-	lock btr dword [fs:ebx + Var.Lock], 0
+	mov [gs:ebp], esi
+	invoke IData.Finish_modify_table
+
 	xor eax, eax
 
 	.Return:
+	pop esi
+	pop ecx
 	pop ebx
 	pop ebp
 	ret
 
 	restore .Console
 
-Update_screen:
-	; EBX : Screen
+Function_Cardinal_to_HexStr_32:
+	.Num equ dword [gs:ebp - 8]
+	.HexStr equ dword [gs:ebp - 4]
+
+	push ebp
+	add ebp, 8
+	push ebx
+	push ecx
+	push edx
+	push edi
+
+	mov edx, .Num
+	xor ebx, ebx
+	mov edi, .HexStr
+
+	mov cl, 7
+	.Loop:
+	mov eax, edx
+	shl cl, 2
+	shr eax, cl
+	shr cl, 2
+	and al, $F
+
+	cmp al, $A
+	jae .j1
+	add al, '0' - 0
+	jmp .j2
+	.j1: add al, 'A' - $A
+	.j2: inc ebx
+
+	mov [ds:edi + ebx - 1], al
+
+	.Continue_loop:
+	dec cl
+	jns .Loop
+
+	.Return:
+	xor eax, eax
+	pop edi
+	pop edx
+	pop ecx
+	pop ebx
+
+	pop ebp
+	ret
+
+	restore .Num
+	restore .HexStr
+	
+Calculate_offset:
+	; EBX = Screen
+	; EAX = Cursor value
+	; ESI = return value
 
 	mov esi, [ds:ebx + Screen_offset]
-	mov edi, [ds:ebx + Screen_cursor]
-	xor ecx, ecx
-	mov cx, [ds:ebx + Screen_width]
+	add esi, eax
+	sub esi, [ds:ebx + Screen_cursor]
+	
+	cmp esi, [ds:ebx + Screen_size]
+	jb  .Return
+	
+	cmp eax, [ds:ebx + Screen_cursor]
+	jna .jp1
+		sub esi, [ds:ebx + Screen_size]
+		ret
+		.jp1:
+		add esi, [ds:ebx + Screen_size]
+		
+	.Return: ret
+	
+XY_cursor_to_linear_cursor:
+	; EBX = Screen
+	; AX = Y
+	; CX = X
+	; EAX <- return value
+	
+	push edx
+
+	and eax, $FFFF
 	xor edx, edx
+	mov dx, [ds:ebx + Screen_width]
+	mul edx
+	
+	and ecx, $FFFF
+	add eax, ecx
+	
+	pop edx
+	ret
+		
+Update_row:
+	; EBX = Screen
+	; EAX = row number (less than $10000)
+	
+	push esi
+	push eax	; Save row number
+	
+	mov cx, [ds:ebx + Screen_X]
+	call XY_cursor_to_linear_cursor
+	
+	call Calculate_offset
+		
+	.Write_to_display:
+	pop eax ; Return row number from stack
+	
+	lea esi, [ebx + 24 + esi * 8]
+	mov [gs:ebp], esi
+	mov [gs:ebp + 4], word 0
+	
+	sub ax, [ds:ebx + Screen_Y]
+	mov [gs:ebp + 6], ax
+	
+	invoke IVideo.Get_display_size
+	mov ax, [ss:_Result]	; display width
+	mov [gs:ebp + 8], eax
+	
+	invoke IVideo.Write_text_line
+	
+	.Return:
+	pop esi
+	ret
+
+Update_screen:
+	; EBX : Screen
+	
+	push ecx
+	push edx
+	push esi
+	push edi
+
+	mov ax, [ds:ebx + Screen_Y]
+	mov cx, [ds:ebx + Screen_X]
+	call XY_cursor_to_linear_cursor
+
+	call Calculate_offset
+
+	invoke IVideo.Get_display_size
+	movzx edx, word [ss:_Result + 2]	; height
+	xor ecx, ecx
+
+	mov edi, [ds:ebx + Screen_size]
 
 	.Loop:
-		mov eax, edi
-		div ecx
+		lea eax, [ebx + 24 + esi * 8]
+		mov [gs:ebp], eax
+		mov [gs:ebp + 4], word 0
+		mov [gs:ebp + 6], cx
+		movzx eax, word [ss:_Result]
+		mov [gs:ebp + 8], eax
+		invoke IVideo.Write_text_line
 
-		cmp dx, [ds:ebx + Screen_X]
-		jb .Next1
-		sub dx, [ds:ebx + Screen_X]
-		cmp ax, [ds:ebx + Screen_Y]
-		jb .Next1
-		sub ax, [ds:ebx + Screen_Y]
+		inc ecx
+		cmp ecx, edx
+		jae .Return
 
-		mov [gs:ebp], dword 0
-		push dword [ds:ebx + Screen_attribute]
-		pop dword [gs:ebp + 4]
-		mov [gs:ebp + 8], dx
-		mov [gs:ebp + 10], ax
-		invoke IVideo.Write_char
+		movzx eax, word [ds:ebx + Screen_width]
+		add esi, eax
+		cmp esi, edi
+		jb .Loop
+		sub esi, edi
+		jmp .Loop
+		
+	.Return:
+	pop edi
+	pop esi
+	pop edx
+	pop ecx
+	ret
+
+Function_Lock_console:	; Function 5
+	.Console equ dword [gs:ebp - 4] ; Console : Handle_type
+
+	push ebp
+	add ebp, 4
+
+	push esi
+
+	mov esi, [fs:IConsole]
+	mov esi, [fs:esi + Var.Console_table]
+
+	mov [gs:ebp], esi
+	invoke IData.Access_table
+
+	mov eax, .Console
+	call Translate_console_handle
+
+	.Spinlock:
+		lock bts dword [ds:eax + Console_lock], 0
+		jnc .Finish
+		invoke IThread.Yield
+		jmp .Spinlock
+
+	.Finish:
+	mov esi, [ss:_ThreadIdx]
+	mov [ds:eax + Console_lock_owner], esi
+
+	xor eax, eax
+
+	.Return:
+	pop esi
+
+	pop ebp
+	ret
+
+	restore .Console
+
+Function_Release_console:  ; Function 6
+	.Console equ dword [gs:ebp - 4] ; Console : Handle_type
+
+	push ebp
+	add ebp, 4
+
+	push ecx
+	push esi
+
+	mov esi, [fs:IConsole]
+	mov esi, [fs:esi + Var.Console_table]
+
+	mov eax, .Console
+	call Translate_console_handle
+
+	mov ecx, [ss:_ThreadIdx]
+	cmp [ds:eax + Console_lock_owner], ecx
+	jne .Error1
+
+	xor ecx, ecx
+	mov [ds:eax + Console_lock_owner], ecx
+	lock btr dword [ds:eax + Console_lock], 0
+
+	mov [gs:ebp], esi
+	invoke IData.Finish_access_table
+
+	.Return:
+	pop esi
+	pop ecx
+
+	pop ebp
+	ret
+
+	.Error1:
+	mov eax, YOU_DO_NOT_OWN_LOCK
+	jmp .Return
+
+	restore .Console
+
+Translate_console_handle:
+	; EAX : Console
+	; ESI : Console_table
+	; Result in EAX
+
+	mov [gs:ebp], esi
+	mov [gs:ebp + 4], eax
+	invoke IData.Get_table_entry
+
+	mov eax, [ss:_Result]
+	add eax, esi
+	ret

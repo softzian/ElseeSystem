@@ -28,6 +28,10 @@ Init_base_system:
 	Set_Active_Module eax
 	call eax
 
+	mov eax, $18000 	; Data
+	Set_Active_Module eax
+	call eax
+
 	mov eax, $15000 	; Keyboard
 	Set_Active_Module eax
 	call eax
@@ -130,6 +134,11 @@ Init_code_table:
 	;push 1
 	;invoke ISystem.Mark_Code
 
+	mov [gs:ebp], dword $18000
+	mov [gs:ebp + 4], dword $18FFF
+	mov [gs:ebp + 8], dword 1
+	invoke ISystem.Mark_Code
+
 	mov [gs:ebp], dword $20000
 	mov [gs:ebp + 4], dword $2FFFF
 	mov [gs:ebp + 8], dword 2
@@ -141,12 +150,6 @@ Print_Code_Table:
 	xor ecx, ecx
 
 	.Loop:
-	;push dword ecx
-	;call dword [cs:IUtility.Write_Cardinal_Hex]
-	;mov [esp - 1], byte ' '
-	;dec esp
-	;call dword [cs:IUtility.Write_Char]
-
 	mov eax, [cs:4 + ecx]
 	Write_register eax
 
@@ -176,11 +179,6 @@ Print_Memory_Table:
 	xor ecx, ecx
 
 	.Loop:
-	;push dword ecx
-	;invoke IUtility.Write_Cardinal_Hex
-	;mov [esp - 1], byte ' '
-	;dec esp
-	;invoke IUtility.Write_Char
 
 	mov eax, [ds:$FFFFC000 + 4 + ecx]
 	Write_register eax
@@ -195,53 +193,6 @@ Print_Memory_Table:
 
 	add ecx, 12
 	cmp [ds:$FFFFC000 + 4 + ecx + 4], dword 0
-	jne .Loop
-	invoke IVideo.New_Line
-	ret
-
-Print_Thread_Table:
-	mov ecx, 17
-
-	.Loop:
-	push dword ecx
-	invoke IUtility.Write_Cardinal_Hex
-	mov [esp - 1], byte ' '
-	dec esp
-	invoke IUtility.Write_Char
-
-	push dword [$FFE80000 + ecx]
-	invoke IUtility.Write_Cardinal_Hex
-	mov [esp - 1], byte ' '
-	dec esp
-	invoke IUtility.Write_Char
-
-	push dword [$FFE80000 + ecx + 4]
-	invoke IUtility.Write_Cardinal_Hex
-	mov [esp - 1], byte ' '
-	dec esp
-	invoke IUtility.Write_Char
-
-	push dword [$FFE80000 + ecx + 8]
-	invoke IUtility.Write_Cardinal_Hex
-	mov [esp - 1], byte ' '
-	dec esp
-	invoke IUtility.Write_Char
-
-	push dword [$FFE80000 + ecx + 12]
-	invoke IUtility.Write_Cardinal_Hex
-	mov [esp - 1], byte ' '
-	dec esp
-	invoke IUtility.Write_Char
-
-	xor eax, eax
-	mov al, [$FFE80000 + ecx + 16]
-	push eax
-	invoke IUtility.Write_Cardinal_Hex
-
-	invoke IVideo.New_Line
-
-	add ecx, 17
-	cmp [$FFFFC000 + ecx], dword 0
 	jne .Loop
 	invoke IVideo.New_Line
 	ret

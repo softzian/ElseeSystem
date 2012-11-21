@@ -25,14 +25,6 @@ macro Write_register x
 	pop eax
 }
 
-IVideo = $100800
-IVideo.Write_Telex = IVideo + 4
-IVideo.Clear_Screen = IVideo + 8
-IVideo.New_Line = IVideo + 12
-IVideo.Blit_text = IVideo + 16
-IVideo.Write_char = IVideo + 20
-IVideo.Scroll_screen = IVideo + 24
-
 ISystem = $100000
 ISystem.Create_Region = ISystem + 4
 ISystem.Allocate = ISystem + 8
@@ -53,14 +45,6 @@ ISystem.Copy_code_to_data = ISystem + 48
 IKeyboard = $100200
 IKeyboard.Set_target_queue = IKeyboard + 4
 
-IUtility = $100A00
-IUtility.Cardinal_to_HexStr = IUtility + 4
-IUtility.Write_Cardinal_Hex = IUtility + 8
-IUtility.Write_Char = IUtility + 12
-IUtility.Write_String = IUtility + 16
-IUtility.HexStr_to_Cardinal = IUtility + 44
-IUtility.HexChar_to_Byte = IUtility + 48
-
 IInterrupt = $100400
 IInterrupt.Install_ISR = IInterrupt + 4
 IInterrupt.Init_PIC = IInterrupt + 8
@@ -74,6 +58,29 @@ IThread.Start = IThread + 8
 IThread.Yield = IThread + 12
 IThread.Block_self = IThread + 16
 
+IVideo = $100800
+IVideo.Write_Telex = IVideo + 4
+IVideo.Clear_Screen = IVideo + 8
+IVideo.New_Line = IVideo + 12
+IVideo.Write_text_line = IVideo + 16
+IVideo.Write_text_char = IVideo + 20
+IVideo.Scroll_screen = IVideo + 24
+IVideo.Get_display_size = IVideo + 28
+
+IData = $100A00
+IData.Create_table = IData + 4
+
+IData.Modify_table = IData + 8
+IData.Finish_modify_table = IData + 12
+IData.Access_table = IData + 16
+IData.Finish_access_table = IData + 20
+
+IData.Add_table_entry = IData + 24
+IData.Delete_table_entry = IData + 28
+IData.Get_table_entry = IData + 32
+
+IData.Delete_table = IData + 36
+
 IConvert = $100C00
 IConvert.UTF16_to_raw_UTF32 = IConvert + 4
 
@@ -82,3 +89,5 @@ IConsole.Alloc_console = IConsole + 4
 IConsole.Write_char = IConsole + 8
 IConsole.Read_char = IConsole + 12
 IConsole.Switch_console = IConsole + 16
+IConsole.Lock_console = IConsole + 20
+IConsole.Release_console = IConsole + 24

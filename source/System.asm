@@ -11,14 +11,30 @@
 
 include 'include/Header.inc'
 include 'include/Errcode.inc'
-include 'System_p0.inc'
+
+Const:
+	SizeOf_Region_Header = 4
+	SizeOf_Memory_Entry = 12
+	SizeOf_Memory_Table = ($4000 - SizeOf_Region_Header)
+	Region_Address = $FFFFFFFF - $4000 + 1
+
+	SizeOf_Code_Header = 4
+	SizeOf_Code_Entry = 12
+	SizeOf_Code_Region = $4000
+	SizeOf_Code_Table = (SizeOf_Code_Region - SizeOf_Code_Header)
+
+Error_Code:
+	REGION_SIZE_IS_NOT_LARGE_ENOUGH = -1
+	NON_POSITIVE_SIZE = INVALID_SIZE
+	MESSAGE_QUEUE_FULL = -2
+	MESSAGE_QUEUE_EMPTY = -3
 
 use32
 
 ISystem = $100000
 ; Function 1: Create_Region (Start, Limit : Address; Type : Cardinal)
-; Function 2: Allocate (Region : Address; Size : Cardinal) : Address
-; Function 3: Deallocate (Region : Address; Ptr : Address)
+; Function 2: Allocate (Size : Cardinal) : Address
+; Function 3: Deallocate (Ptr : Address)
 ; Function 4: Mark_Memory (Start, Limit : Address; Module_Idx : Cardinal)
 
 ; Function 5: Create_Code_Region (Limit : Address)
@@ -50,6 +66,9 @@ Interface:
 
 	dd Function_Copy_code_to_data
 
+Var:
+	.Lock dd 0
+
 Function_Init:
 	push ebx
 	push edi
@@ -80,7 +99,6 @@ Function_Init:
 include 'System_p1.inc' ; Function 1 to 4
 include 'System_p2.inc' ; Function 5 to 8
 
-
 Function_Create_Message_Queue:	; Function 9
 	.Size equ dword [gs:ebp - 4]	   ; Size : Cardinal
 
@@ -97,8 +115,7 @@ Function_Create_Message_Queue:	; Function 9
 	shl eax, 4	; Size of whole structure
 	mov .Size, eax
 
-	mov [gs:ebp], dword 0
-	mov [gs:ebp + 4], eax
+	mov [gs:ebp], eax
 	call Function_Allocate
 
 	test eax, eax
@@ -129,6 +146,15 @@ Function_Create_Message_Queue:	; Function 9
 
 	restore .Size
 
+Get_Queue_lock:
+	lock bts dword [ds:ebx + 4], 0
+	jc .Wait
+	ret
+
+	.Wait:
+	invoke IThread.Yield
+	jmp Get_Queue_lock
+
 Function_Send_Message:		; Function 10
 	.Queue equ dword [gs:ebp - 20]	 ; Queue : Address
 	.Msg = -16 ; Msg : Message : 16 bytes [gs:ebp - 16]
@@ -141,12 +167,7 @@ Function_Send_Message:		; Function 10
 
 	mov ebx, .Queue
 
-	; Get lock
-	.Spinlock:
-		lock bts dword [ds:ebx + 4], 0
-		jnc .Next1
-		invoke IThread.Yield
-		jmp .Spinlock
+	call Get_Queue_lock
 
 	.Next1:
 	mov eax, [ds:ebx + 12]	   ; Write pointer
@@ -202,12 +223,7 @@ Function_Get_Message:	       ; Function 11
 
 	mov ebx, .Queue
 
-	; Get lock
-	.Spinlock:
-		lock bts dword [ds:ebx + 4], 0
-		jnc .Next1
-		invoke IThread.Yield
-		jmp .Spinlock
+	call Get_Queue_lock
 
 	.Next1:
 	mov eax, [ds:ebx + 8]	   ; Read pointer

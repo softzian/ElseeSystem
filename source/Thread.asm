@@ -79,8 +79,7 @@ Function_Init:
 		jna .Loop
 
 	; Allocate Thread Table
-	mov [gs:ebp], dword 0
-	mov [gs:ebp + 4], dword SizeOf_Thread_Table
+	mov [gs:ebp], dword SizeOf_Thread_Table
 	invoke ISystem.Allocate
 
 	test eax, eax

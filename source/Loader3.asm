@@ -67,6 +67,12 @@ PXE_Loader:
 	;test ax, ax
 	;jnz Abort
 
+	push Var.Data_Module
+	push dword $18000
+	call Function_Download_File
+	test ax, ax
+	jnz Abort
+
 	call Procedure_PXE_Finish
 
 Switch_to_Protected_Mode:
@@ -92,6 +98,7 @@ Var:
 	.Keyboard_Module db 8,0,'8042.bin'
 	.Console_Module db 11,0,'Console.bin'
 	.Convert_Module db 11,0,'Convert.bin'
+	.Data_Module db 8,0,'Data.bin'
 
 	.Text db 7,0,'Success'
 	.Text2 db 'Hello World'
@@ -227,11 +234,17 @@ Begin:
 	jmp Halt32
 
 Main_thread:
-	mov eax, [cs:Var.Console]
-	mov [gs:ebp], eax
-	invoke IConsole.Read_char
+	Write_register eax
 
-	jmp Main_thread
+	mov ebx, [fs:Var.Console]
+	mov [gs:ebp], ebx
+	invoke IConsole.Lock_console
+
+	.Loop:
+		mov [gs:ebp], ebx
+		invoke IConsole.Read_char
+
+		jmp .Loop
 
 Halt32:
 	hlt

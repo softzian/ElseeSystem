@@ -17,6 +17,18 @@ use32
 ; Function 3: Stop_Receiver (AdapterId : Byte)
 ; Function 4: Set_Receive_Buffer (AdapterId : Byte; var Buffer : Array of Byte)
 
+jmp Function_Init
+repeat 5-($-$$)
+	db 0
+end repeat
+
+DriverId dd $10EC8139
+Interface:
+	dd Function_Transmit
+	dd Function_Start_Receiver
+	dd Function_Stop_Receiver
+
+
 Function_Init:
 	push ebx
 	push edi

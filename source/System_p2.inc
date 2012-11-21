@@ -16,6 +16,24 @@
 ;               Size : Cardinal
 ;       End
 
+Get_lock_1:
+	mov ebx, [fs:ISystem]
+
+	.Spinlock:
+	lock bts dword [fs:ebx + Var.Lock], 1
+	jnc .Return
+
+	invoke IThread.Yield
+	jmp .Spinlock
+
+	.Return:
+	ret
+
+Release_lock_1:
+	mov ebx, [fs:ISystem]
+	lock btr dword [fs:ebx + Var.Lock], 1
+	ret
+
 Function_Create_Code_Region:  ; Function 5
 	.Limit equ dword [gs:ebp - 4]
 
@@ -73,7 +91,10 @@ Function_Allocate_Code:    ; Function 6
 	push esi
 	push edi
 
+	call Get_lock_1
+
 	; Step 1 - Find free entry with enough size (first-fit)
+	.Step1:
 	xor ecx, ecx
 	mov eax, .Size
 	mov ebx, SizeOf_Region_Header
@@ -143,6 +164,8 @@ Function_Allocate_Code:    ; Function 6
 	xor eax, eax
 
 	.Return:
+	call Release_lock_1
+
 	pop edi
 	pop esi
 	pop edx
@@ -211,7 +234,10 @@ Function_Deallocate_Code:    ; Function 7
 	push ecx
 	push edx
 
+	call Get_lock_1
+
 	; Step 1 - Find Entry
+	.Step1:
 	mov eax, .Ptr
 	mov ebx, SizeOf_Region_Header
 	xor ecx, ecx
@@ -236,6 +262,8 @@ Function_Deallocate_Code:    ; Function 7
 	xor eax, eax
 
 	.Return:
+	call Release_lock_1
+
 	pop edx
 	pop ecx
 	pop ebx
@@ -355,6 +383,9 @@ Function_Mark_Code:   ; Function 8
 	push edx
 	push esi
 
+	call Get_lock_1
+
+	.Begin:
 	mov eax, .Limit
 	mov edx, .Start
 	cmp eax, edx
@@ -414,6 +445,8 @@ Function_Mark_Code:   ; Function 8
 	xor eax, eax
 
 	.Return:
+	call Release_lock_1
+
 	pop esi
 	pop edx
 	pop ecx
