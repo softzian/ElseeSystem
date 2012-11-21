@@ -65,6 +65,10 @@ Init_base_system:
 	mov [gs:ebp], eax
 	invoke IConsole.Switch_console
 
+	invoke IConsole.Alloc_console
+	mov eax, [ss:_Result]
+	mov [fs:Var.Console2], eax
+
 	mov [gs:ebp], dword Main_thread
 	invoke IThread.New_Thread
 

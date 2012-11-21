@@ -66,6 +66,7 @@ IVideo.Write_text_line = IVideo + 16
 IVideo.Write_text_char = IVideo + 20
 IVideo.Scroll_screen = IVideo + 24
 IVideo.Get_display_size = IVideo + 28
+IVideo.Scroll_rect = IVideo + 32
 
 IData = $100A00
 IData.Create_table = IData + 4

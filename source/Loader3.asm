@@ -104,6 +104,7 @@ Var:
 	.Text2 db 'Hello World'
 	.UTF32_Str dd 'H','e','l','l','o',' ','W','o','r','l','d'
 	.Console dd 0
+	.Console2 dd 0
 
 Halt:
 	hlt
@@ -234,15 +235,17 @@ Begin:
 	jmp Halt32
 
 Main_thread:
-	Write_register eax
-
 	mov ebx, [fs:Var.Console]
-	mov [gs:ebp], ebx
-	invoke IConsole.Lock_console
 
 	.Loop:
 		mov [gs:ebp], ebx
+		invoke IConsole.Lock_console
+
+		mov [gs:ebp], ebx
 		invoke IConsole.Read_char
+
+		mov [gs:ebp], ebx
+		invoke IConsole.Release_console
 
 		jmp .Loop
 

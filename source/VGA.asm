@@ -25,6 +25,8 @@ IVideo = $100800
 
 ; Function 7: Get_display_size : Size_record
 
+; Function 8: Scroll_rect (Attribute : Cardinal; X, Y, Width, Height : Word);
+
 jmp Function_Init
 Interface:
 	dd Function_Write_Telex
@@ -36,6 +38,8 @@ Interface:
 	dd Function_Scroll_screen
 
 	dd Function_Get_display_size
+
+	dd Function_Scroll_rect
 
 Const:
 	Write_Flag = 0
@@ -63,7 +67,7 @@ Function_Init:
 		add edi, 4
 		add esi, 4
 
-		cmp edi, IVideo + 4 * 7
+		cmp edi, IVideo + 4 * 8
 		jna .Loop
 
 	pop esi
@@ -460,6 +464,7 @@ Function_Scroll_screen: 	; Function 6
 	.Loop1:
 		mov ax, [fs:$80000 + edx * 2]
 		mov [fs:$80000 + ecx * 2], ax
+		mov [fs:$B8000 + ecx * 2], ax
 		inc ecx
 		inc edx
 		cmp edx, ebx
@@ -472,19 +477,10 @@ Function_Scroll_screen: 	; Function 6
 
 	.Loop2:
 		mov [fs:$80000 + ecx * 2], ax
+		mov [fs:$B8000 + ecx * 2], ax
 		inc ecx
 		cmp ecx, ebx
 		jb .Loop2
-
-	shl ebx, 1
-	xor ecx, ecx
-
-	.Loop3:
-		mov al, [fs:$80000 + ecx]
-		mov [fs:$B8000 + ecx], al
-		inc ecx
-		cmp ecx, ebx
-		jb .Loop3
 
 	.Return:
 	pop edx
@@ -495,6 +491,107 @@ Function_Scroll_screen: 	; Function 6
 	ret
 
 	restore .Attribute
+
+Function_Scroll_rect:	      ; Function 8
+	.Attribute equ dword [gs:ebp - 12] ; Attribute : Cardinal
+	.X equ word [gs:ebp - 8]
+	.Y equ word [gs:ebp - 6]
+	.Width equ word [gs:ebp - 4]
+	.Height equ word [gs:ebp - 2]
+
+	; Local variable
+	.Screen_width equ byte [gs:ebp - 4]
+
+	push ebp
+	add ebp, 12
+
+	push ebx
+	push ecx
+	push edx
+	push esi
+	push edi
+
+	mov ebx, [fs:IVideo]
+	mov ax, .Y
+	mov cx, .X
+	call Calculate_cursor
+
+	mov edx, ecx
+
+	mov ax, .Y
+	mov cx, .X
+	add ax, .Height
+	add cx, .Width
+	dec al
+	dec cl
+	call Calculate_cursor
+
+	mov edi, ecx
+	mov ecx, edx
+
+	movzx eax, byte [fs:ebx + Var.Width]
+	add edx, eax
+
+	mov ebx, edi
+	movzx edi, .Width
+	xor esi, esi
+	mov .Screen_width, al
+
+	.Loop1:
+		mov ax, [fs:$80000 + edx * 2]
+		mov [fs:$80000 + ecx * 2], ax
+		mov [fs:$B8000 + ecx * 2], ax
+
+		inc ecx
+		inc edx
+		inc esi
+
+		cmp edx, ebx
+		ja .End_loop1
+
+		cmp esi, edi
+		jb .Loop1
+
+		sub ecx, edi
+		sub edx, edi
+		movzx eax, .Screen_width
+		add ecx, eax
+		add edx, eax
+		xor esi, esi
+		jmp .Loop1
+		.End_loop1:
+
+	sub ecx, edi
+	movzx eax, .Screen_width
+	add ecx, eax
+
+	mov eax, .Attribute
+	call Function_32bit_attr_to_VGA_attr
+	mov ah, al
+	xor al, al
+
+	.Loop2:
+		mov [fs:$80000 + ecx * 2], ax
+		mov [fs:$B8000 + ecx * 2], ax
+		inc ecx
+		cmp ecx, ebx
+		jbe .Loop2
+
+	.Return:
+	pop edi
+	pop esi
+	pop edx
+	pop ecx
+	pop ebx
+
+	pop ebp
+	ret
+
+	restore .Attribute
+	restore .X
+	restore .Y
+	restore .Width
+	restore .Height
 	
 Function_Get_display_size:	; Function 7
 	push ebx
