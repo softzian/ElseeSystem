@@ -6,8 +6,20 @@ Stack:
 	Reserved $FFFFFFE0
 	
 Second stack:
-	Stack pointer - 0
+	Reserved - 4
 	Reserved - 4
 	For user - 8
 	Begin - 16
 	
+Context_handle:
+	Context type - 4 bytes
+	Driver id - 4 bytes	; ModuleIdx of driver
+	Lock - 2 bytes
+	Flag - 2 bytes
+	Context - 4 bytes
+	
+VGA_text_mode_device_context_record:
+	Flag - 2 bytes
+	Width - 1 bytes
+	Height - 1 bytes
+	Text_framebuffer - n bytes

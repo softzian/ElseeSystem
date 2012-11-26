@@ -28,7 +28,7 @@ Init_base_system:
 	Set_Active_Module eax
 	call eax
 
-	mov eax, $18000 	; Data
+	mov eax, $18000 	; Handle
 	Set_Active_Module eax
 	call eax
 
@@ -41,33 +41,32 @@ Init_base_system:
 	;mov eax, $12000         ; Utility
 	;call eax
 
-	mov eax, $16000 	; Console
-	Set_Active_Module eax
-	call eax
+	;mov eax, $16000         ; Console
+	;Set_Active_Module eax
+	;call eax
 
 	;push $17000
 	;invoke ISystem.Set_Active_Module
 	;mov eax, $17000         ; Conversion
 	;call eax
 
-	;push $7000
-	;invoke ISystem.Set_Active_Module
+	Set_Active_Module $7000
 
 	; ------------------------------- ;
 	; Create console and start thread ;
 	; ------------------------------- ;
 	cli
 
-	invoke IConsole.Alloc_console
-	mov eax, [ss:_Result]
-	mov [fs:Var.Console], eax
+	;invoke IConsole.Alloc_console
+	;mov eax, [ss:_Result]
+	;mov [fs:Var.Console], eax
 
-	mov [gs:ebp], eax
-	invoke IConsole.Switch_console
+	;mov [gs:ebp], eax
+	;invoke IConsole.Switch_console
 
-	invoke IConsole.Alloc_console
-	mov eax, [ss:_Result]
-	mov [fs:Var.Console2], eax
+	;invoke IConsole.Alloc_console
+	;mov eax, [ss:_Result]
+	;mov [fs:Var.Console2], eax
 
 	mov [gs:ebp], dword Main_thread
 	invoke IThread.New_Thread

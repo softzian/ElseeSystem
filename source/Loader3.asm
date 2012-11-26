@@ -55,11 +55,11 @@ PXE_Loader:
 	test ax, ax
 	jnz Abort
 
-	push Var.Console_Module
-	push dword $16000
-	call Function_Download_File
-	test ax, ax
-	jnz Abort
+	;push Var.Console_Module
+	;push dword $16000
+	;call Function_Download_File
+	;test ax, ax
+	;jnz Abort
 
 	;push Var.Convert_Module
 	;push dword $17000
@@ -67,7 +67,7 @@ PXE_Loader:
 	;test ax, ax
 	;jnz Abort
 
-	push Var.Data_Module
+	push Var.Handle_Module
 	push dword $18000
 	call Function_Download_File
 	test ax, ax
@@ -98,7 +98,7 @@ Var:
 	.Keyboard_Module db 8,0,'8042.bin'
 	.Console_Module db 11,0,'Console.bin'
 	.Convert_Module db 11,0,'Convert.bin'
-	.Data_Module db 8,0,'Data.bin'
+	.Handle_Module db 10,0,'Handle.bin'
 
 	.Text db 7,0,'Success'
 	.Text2 db 'Hello World'
@@ -235,19 +235,34 @@ Begin:
 	jmp Halt32
 
 Main_thread:
-	mov ebx, [fs:Var.Console]
+	mov [gs:ebp], dword $1000
+	invoke ISystem.Allocate
 
-	.Loop:
-		mov [gs:ebp], ebx
-		invoke IConsole.Lock_console
+	mov esi, [ss:_Result]
 
-		mov [gs:ebp], ebx
-		invoke IConsole.Read_char
+	mov [gs:ebp], dword 1
+	invoke IVideo.Alloc_context
 
-		mov [gs:ebp], ebx
-		invoke IConsole.Release_console
+	mov edi, [ss:_Result]
 
-		jmp .Loop
+	mov [gs:ebp], edi
+	invoke IVideo.Switch_context
+
+	mov [gs:ebp], edi
+	invoke IVideo.Lock_context
+
+	mov [gs:ebp], dword Var.Text2
+	mov [gs:ebp + 4], esi
+	mov [gs:ebp + 8], dword 11
+	invoke ISystem.Copy_code_to_data
+
+	mov [gs:ebp], edi
+	mov [gs:ebp + 4], esi
+	mov [gs:ebp + 8], word 11
+	mov [gs:ebp + 10], byte 00001010b
+	mov [gs:ebp + 11], byte 0
+	mov [gs:ebp + 12], byte 0
+	invoke IVideo.Write_text_line
 
 Halt32:
 	hlt

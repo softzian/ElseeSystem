@@ -1,4 +1,4 @@
-; VGA.asm - IVideo Standard VGA Module
+; VGA.asm - IVideo Standard VGA driver module
 ; Written in 2012 by Congdm
 ;
 ; To the extent possible under law, the author(s) have dedicated
@@ -19,34 +19,68 @@ IVideo = $100800
 ; Function 2: Clear_Screen
 ; Function 3: New_Line
 
-; Function 4: Write_text_line (in Src : Buffer; X, Y : Card16; Count : Cardinal)
-; Function 5: Write_text_char (Char : UTF32_char; Attribute : Cardinal; X, Y : Card16)
-; Function 6: Scroll_screen (Attribute : Cardinal)
+; Function 4: Alloc_context (Type : Cardinal) : Handle
+; Function 5: Create_compatible_context (Context : Handle) : Handle
+; Function 6: Dealloc_context (Context : Handle)
 
-; Function 7: Get_display_size : Size_record
+; Function 7: Lock_context (Context : Handle)
+; Function 8: Release_context (Context : Handle)
 
-; Function 8: Scroll_rect (Attribute : Cardinal; X, Y, Width, Height : Word);
+; Function 9: Switch_context (Context : Handle)
+
+; Function 10: Blit (Src : Context; Src_X, Src_Y : Cardinal; Dst : Context; Dst_X, Dst_Y, Width, Height : Cardinal)
+
+; Text mode context functions
+; Function 11: Write_text_char (Context : Handle; Char : Ansi_char; Attribute : Byte; X, Y : Byte)
+; Function 12: Write_text_line (Context : Handle; var Src : Array of Ansi_char; Count : Card16; Attribute, X, Y : Byte)
 
 jmp Function_Init
-Interface:
+
+IVideo_Interface:
 	dd Function_Write_Telex
 	dd Function_Clear_Screen
 	dd Function_New_Line
 
-	dd Function_Write_text_line
+	dd Function_Alloc_context
+	dd 0
+	dd 0
+
+	dd Function_Lock_context
+	dd Function_Release_context
+
+	dd Function_Switch_context
+
+	dd 0
+
 	dd Function_Write_text_char
-	dd Function_Scroll_screen
+	dd Function_Write_text_line
 
-	dd Function_Get_display_size
-
-	dd Function_Scroll_rect
-
-Const:
-	Write_Flag = 0
-Error_Code:
+IVideo_Error_code:
 	INVALID_COUNT = -1
 	INVALID_CURSOR = -2
 	VIDEO_BUFFER_OVERFLOW = -3
+	CANNOT_CREATE_HANDLE = -4
+	ALLOCATE_MEMORY_PROBLEM = -6
+	CANNOT_SWITCH_IN_MEMORY_CONTEXT = -7
+	INVALID_CONTEXT_HANDLE = -8
+	NOT_TEXT_MODE_CONTEXT = -9
+	UNSUPPORT_CONTEXT_TYPE = -10
+
+Const:
+	Write_Flag = 0
+
+	; Context record
+	Context_type = 0
+	Context_driver = 4
+
+	; Text mode context record (extends from Context)
+	Text_mode_context_width = 8
+	Text_mode_context_height = 9
+	Text_mode_context_size = 10
+	Text_mode_context_buffer = 12
+
+	; Context type
+	VGA_TEXT_MODE_CONTEXT = 1
 
 Function_Init:
 	push ebx
@@ -55,7 +89,7 @@ Function_Init:
 
 	mov ebx, eax
 	mov edi, IVideo
-	lea esi, [eax + Interface]
+	lea esi, [eax + IVideo_Interface]
 	mov [fs:edi], eax
 	add edi, 4
 
@@ -67,9 +101,12 @@ Function_Init:
 		add edi, 4
 		add esi, 4
 
-		cmp edi, IVideo + 4 * 8
+		cmp edi, IVideo + 4 * 12
 		jna .Loop
 
+	xor eax, eax
+
+	.Return:
 	pop esi
 	pop edi
 	pop ebx
@@ -201,251 +238,122 @@ Function_New_Line:	; Function 3
 	pop ebx
 	ret
 
-Function_Write_text_line:	; Function 4
-	.Src equ dword [gs:ebp - 12]	; in Src : Buffer
-	.X equ word [gs:ebp - 8]	; X : Card16
-	.Y equ word [gs:ebp - 6]	; Y : Card16
-	.Count equ dword [gs:ebp - 4]	; Count : Cardinal
+Function_Alloc_context: 	; Function 4
+	.Type equ dword [gs:ebp - 4] ; Type : Cardinal
 
 	push ebp
-	add ebp, 12
+	add ebp, 4
 
 	push ebx
-	push ecx
-	push edx
-	
-	mov edx, .Count
-	test edx, edx
-	jz .Error1
 
-	mov ebx, [fs:IVideo]
-	mov cx, .X
-	mov ax, .Y
+	mov eax, .Type
+	cmp eax, VGA_TEXT_MODE_CONTEXT
+	je .VGA_text_mode_context
+	jmp .Error1
 
-	call Check_cursor
-	test ah, ah
+	.VGA_text_mode_context:
+	call Create_VGA_text_mode_context
+
+	.Create_handle:
+	mov [gs:ebp], ebx
+	mov [gs:ebp + 4], dword HANDLE_VIDEO_CONTEXT
+	mov [gs:ebp + 8], word 1
+	invoke IHandle.Create_handle
+
+	test eax, eax
 	jnz .Error2
-	
-	call Calculate_cursor
-	
-	lea eax, [ecx + edx]
-	cmp ax, [fs:ebx + Var.Screen_size]
-	ja .Error3
-	
-	mov ebx, .Src
-	call Write_text_line
-
-	xor eax, eax
 
 	.Return:
-	pop edx
-	pop ecx
 	pop ebx
 
 	pop ebp
 	ret
-	
+
 	.Error1:
-	mov eax, INVALID_COUNT
+	mov eax, UNSUPPORT_CONTEXT_TYPE
 	jmp .Return
+
 	.Error2:
-	mov eax, INVALID_CURSOR
+	mov [gs:ebp], ebx
+	invoke ISystem.Deallocate
+	mov eax, CANNOT_CREATE_HANDLE
 	jmp .Return
-	.Error3:
-	mov eax, VIDEO_BUFFER_OVERFLOW
-	jmp .Return
 
-	restore .Src
-	restore .X
-	restore .Y
-	restore .Count
-	
-Write_text_line:
-	; EBX = Src
-	; ECX = Cursor
-	; EDX = Count
-	
-	push esi
-	
-	xor esi, esi
-	shl ecx, 1
-	.Loop:
-		mov eax, [ds:ebx + esi * 8]
-		mov [fs:$B8000 + ecx + esi * 2], al
-		mov [fs:$80000 + ecx + esi * 2], al
-		
-		mov eax, [ds:ebx + esi * 8 + 4]
-		call Function_32bit_attr_to_VGA_attr
-		mov [fs:$B8000 + ecx + esi * 2 + 1], al
-		mov [fs:$80000 + ecx + esi * 2 + 1], al
-		
-		inc esi
-		cmp esi, edx
-		jb .Loop
-		
-	pop esi
-	ret
+	restore .Type
 
-Function_Write_text_char:	 ; Function 5
-	.Char equ dword [gs:ebp - 12]		; Char : UTF32_char
-	.Attribute equ dword [gs:ebp - 8]	; Attribute : Cardinal
-	.X equ word [gs:ebp - 4]			; X : Card16
-	.Y equ word [gs:ebp - 2]			; Y : Card16
+Create_VGA_text_mode_context:
+	; Result in EBX
 
-	push ebp
-	add ebp, 12
+	; Allocate context record
+	mov [gs:ebp], dword (12 + 2000 * 2)
+	invoke ISystem.Allocate
 
-	push ebx
-	push ecx
-	push edx
-
-	mov ebx, [fs:IVideo]
-	mov cx, .X
-	mov ax, .Y
-
-	call Check_cursor
-	test ah, ah
+	test eax, eax
 	jnz .Error1
-	
-	call Calculate_cursor
 
-	mov eax, .Char
-	mov [fs:$80000 + ecx * 2], al
-	mov [fs:$B8000 + ecx * 2], al
+	mov ebx, [ss:_Result]
 
-	mov eax, .Attribute
-	call Function_32bit_attr_to_VGA_attr
+	mov eax, VGA_TEXT_MODE_CONTEXT
+	bts eax, 31
+	mov [ds:ebx + Context_type], eax
 
-	mov [fs:$80000 + ecx * 2 + 1], al
-	mov [fs:$B8000 + ecx * 2 + 1], al
+	mov eax, [ss:_ModuleIdx]
+	mov [ds:ebx + Context_driver], eax
+
+	mov [ds:ebx + Text_mode_context_width], byte 80
+	mov [ds:ebx + Text_mode_context_height], byte 25
+	mov [ds:ebx + Text_mode_context_size], word 2000
 
 	xor eax, eax
-
-	.Return:
-	pop edx
-	pop ecx
-	pop ebx
-
-	pop ebp
 	ret
-	
+
 	.Error1:
-	mov eax, INVALID_CURSOR
-	jmp .Return
-
-	restore .Char
-	restore .Attribute
-	restore .X
-	restore .Y
-	
-Check_cursor:
-	; CX = X
-	; AX = Y
-	; EBX = [fs:IVideo]
-	; Result -> AH
-
-	test ch, ch
-	jnz .Error
-	test ah, ah
-	jnz .Error
-
-	cmp cl, [fs:ebx + Var.Width]
-	jae .Error
-	cmp al, [fs:ebx + Var.Height]
-	jae .Error
-	
-	ret
-	
-	.Error:
-	mov ah, 1
+	mov eax, ALLOCATE_MEMORY_PROBLEM
 	ret
 
-Calculate_cursor:
-	; CX = X
-	; AX = Y
-	; EBX = [fs:IVideo]
-	; Result -> ECX
-	
-	mul byte [fs:ebx + Var.Width]
-	add ecx, eax
-	and ecx, $FFFF
+Function_Lock_context:		; Function 7
+	invoke IHandle.Request_handle
 	ret
-	
-Function_32bit_attr_to_VGA_attr:
-	; EAX: Input
-	; AL : Output
+
+Function_Release_context:	; Function 8
+	invoke IHandle.Release_handle
+	ret
+
+Resolve_context_handle:
+	; ECX - Context
+	; Output:
+	; ESI <- Handle address
 
 	push edi
 
-	push eax
-	call Function_15bit_RGB_to_4bit_RGBI
-	mov edi, eax
-	pop eax
+	mov [gs:ebp], ecx
+	invoke IHandle.Resolve_handle
 
-	shr eax, 15
-	call Function_15bit_RGB_to_4bit_RGBI
-	shl al, 4
-	or eax, edi
+	test eax, eax
+	jnz .Error1
 
+	mov esi, [ss:_Result]
+	mov edi, [ss:_Result + 4]
+
+	cmp edi, HANDLE_VIDEO_CONTEXT
+	jne .Error1
+
+	mov eax, [ss:_ModuleIdx]
+	cmp [ds:esi + Context_driver], eax
+	jne .Error1
+
+	xor al, al
+
+	.Return:
 	pop edi
 	ret
 
-Function_15bit_RGB_to_4bit_RGBI:
-	; ax - input
-	; bl - rgb; bh - intensify; 16 bit high of ebx - result
-	; al - output
+	.Error1:
+	mov al, 1
+	jmp .Return
 
-	push ebx
-	xor ebx, ebx
-
-	.Blue:
-	mov bl, al
-	and bl, 11111b
-	cmp bl, 8
-	jb .Green
-	inc bh
-	bts ebx, 16
-	cmp bl, 24
-	jb .Green
-	inc bh
-
-	.Green:
-	shr eax, 5
-	mov bl, al
-	and bl, 11111b
-	cmp bl, 8
-	jb .Red
-	inc bh
-	bts ebx, 17
-	cmp bl, 24
-	jb .Red
-	inc bh
-
-	.Red:
-	shr eax, 5
-	mov bl, al
-	and bl, 11111b
-	cmp bl, 8
-	jb .Intensify
-	inc bh
-	bts ebx, 18
-	cmp bl, 24
-	jb .Intensify
-	inc bh
-
-	.Intensify:
-	cmp bh, 3
-	jbe .Return
-	bts ebx, 19
-
-	.Return:
-	shr ebx, 16
-	mov eax, ebx
-	pop ebx
-	ret
-
-Function_Scroll_screen: 	; Function 6
-	.Attribute equ dword [gs:ebp - 4] ; Attribute : Cardinal
+Function_Switch_context:	; Function 9
+	.Context equ dword [gs:ebp - 4] ; Context : Handle
 
 	push ebp
 	add ebp, 4
@@ -453,36 +361,50 @@ Function_Scroll_screen: 	; Function 6
 	push ebx
 	push ecx
 	push edx
+	push esi
 
-	mov ebx, [cs:IVideo]
-	xor edx, edx
-	mov dl, [cs:ebx + Var.Width]
-	mov bx, [cs:ebx + Var.Screen_size]
-	and ebx, $FFFF
-	xor ecx, ecx
+	mov ebx, [fs:IVideo]
+	mov ecx, .Context
 
-	.Loop1:
-		mov ax, [fs:$80000 + edx * 2]
-		mov [fs:$80000 + ecx * 2], ax
-		mov [fs:$B8000 + ecx * 2], ax
-		inc ecx
-		inc edx
-		cmp edx, ebx
-		jb .Loop1
+	mov edx, [fs:ebx + Var.Active_context]
+	cmp edx, ecx
+	je .Do_nothing
 
-	mov eax, .Attribute
-	call Function_32bit_attr_to_VGA_attr
-	mov ah, al
-	xor al, al
+	mov [gs:ebp], ecx
+	call Function_Lock_context
 
-	.Loop2:
-		mov [fs:$80000 + ecx * 2], ax
-		mov [fs:$B8000 + ecx * 2], ax
-		inc ecx
-		cmp ecx, ebx
-		jb .Loop2
+	test eax, eax
+	jnz .Error1
+
+	call Resolve_context_handle
+	test al, al
+	jnz .Error2
+
+	bt dword [ds:esi + Context_type], 31
+	jnc .Error3
+
+	mov [gs:ebp], edx
+	call Function_Lock_context
+
+	test eax, eax
+	jnz .Active_console_is_invalid
+
+	call Restore_context
+	mov [fs:ebx + Var.Active_context], ecx
+	xor ebx, ebx
+
+	.Release1:
+	mov [gs:ebp], edx
+	call Function_Release_context
+
+	.Release2:
+	mov [gs:ebp], ecx
+	call Function_Release_context
 
 	.Return:
+	mov eax, ebx
+
+	pop esi
 	pop edx
 	pop ecx
 	pop ebx
@@ -490,20 +412,151 @@ Function_Scroll_screen: 	; Function 6
 	pop ebp
 	ret
 
-	restore .Attribute
+	.Error1:
+	mov ebx, INVALID_CONTEXT_HANDLE
+	jmp .Return
 
-Function_Scroll_rect:	      ; Function 8
-	.Attribute equ dword [gs:ebp - 12] ; Attribute : Cardinal
-	.X equ word [gs:ebp - 8]
-	.Y equ word [gs:ebp - 6]
-	.Width equ word [gs:ebp - 4]
-	.Height equ word [gs:ebp - 2]
+	.Error2:
+	mov ebx, INVALID_CONTEXT_HANDLE
+	jmp .Release2
 
-	; Local variable
-	.Screen_width equ byte [gs:ebp - 4]
+	.Error3:
+	mov ebx, CANNOT_SWITCH_IN_MEMORY_CONTEXT
+	jmp .Release2
+
+	.Do_nothing:
+	xor ebx, ebx
+	jmp .Return
+
+	.Active_console_is_invalid:
+	call Restore_context
+	mov [fs:ebx + Var.Active_context], ecx
+	xor ebx, ebx
+	jmp .Release2
+
+	restore .Context
+
+Restore_context:
+	mov eax, [ds:esi + Context_type]
+	btr eax, 31
+	cmp eax, VGA_TEXT_MODE_CONTEXT
+	je Restore_text_mode_context
+	ret
+
+Restore_text_mode_context:
+	push ecx
+	push edx
+
+	movzx edx, word [ds:esi + Text_mode_context_size]
+	xor ecx, ecx
+	.Loop:
+		mov ax, [ds:esi + Text_mode_context_buffer + ecx * 2]
+		mov [fs:$B8000 + ecx * 2], ax
+		inc ecx
+		cmp ecx, edx
+		jb .Loop
+
+	pop edx
+	pop ecx
+	ret
+
+Function_Write_text_char:
+	.Context equ dword [gs:ebp - 8] ; Context : Handle
+	.Char equ byte [gs:ebp - 4] ; Char : Ansi_char
+	.Attribute equ byte [gs:ebp - 3] ; Attribute : Byte
+	.X equ byte [gs:ebp - 2] ; X : Byte
+	.Y equ byte [gs:ebp - 1] ; Y : Byte
 
 	push ebp
-	add ebp, 12
+	add ebp, 8
+
+	push ecx
+	push edx
+	push esi
+
+	mov ecx, .Context
+	call Resolve_context_handle
+	test al, al
+	jnz .Error1
+
+	mov eax, [ds:esi + Context_type]
+	btr eax, 31
+	cmp eax, VGA_TEXT_MODE_CONTEXT
+	jne .Error2
+
+	mov al, .Y
+	mov dl, .X
+	call Check_and_calculate_cursor
+	bt eax, 31
+	jc .Error3
+
+	movzx edx, ax
+	mov al, .Char
+	mov ah, .Attribute
+	mov [ds:esi + Text_mode_context_buffer + edx * 2], ax
+
+	mov esi, [fs:IVideo]
+	cmp ecx, [fs:esi + Var.Active_context]
+	jne .Finish
+
+	mov [fs:$B8000 + edx * 2], ax
+
+	.Finish:
+	xor eax, eax
+
+	.Return:
+	pop esi
+	pop edx
+	pop ecx
+
+	pop ebp
+	ret
+
+	.Error1:
+	mov eax, INVALID_CONTEXT_HANDLE
+	jmp .Return
+	.Error2:
+	mov eax, NOT_TEXT_MODE_CONTEXT
+	jmp .Return
+	.Error3:
+	mov eax, INVALID_CURSOR
+	jmp .Return
+
+	restore .Context
+	restore .Char
+	restore .Attribute
+	restore .X
+	restore .Y
+
+Check_and_calculate_cursor:
+	cmp al, [ds:esi + Text_mode_context_height]
+	jae .Error
+
+	mov dh, [ds:esi + Text_mode_context_width]
+	cmp dl, dh
+	jae .Error
+
+	mul dh
+	add al, dl
+	adc ah, 0
+
+	btr eax, 31
+	ret
+
+	.Error:
+	bts eax, 31
+	ret
+
+Function_Write_text_line:
+	.Context equ dword [gs:ebp - 13] ; Context : Handle
+	.Src equ dword [gs:ebp - 9] ; var Src : Array of Ansi_char
+	.Count equ word [gs:ebp - 5] ; Count : Card16
+	.Attribute equ byte [gs:ebp - 3] ; Attribute : Byte
+	.X equ byte [gs:ebp - 2] ; X : Byte
+	.Y equ byte [gs:ebp - 1] ; Y : Byte
+
+	push ebp
+	add ebp, 13
 
 	push ebx
 	push ecx
@@ -511,71 +564,58 @@ Function_Scroll_rect:	      ; Function 8
 	push esi
 	push edi
 
-	mov ebx, [fs:IVideo]
-	mov ax, .Y
-	mov cx, .X
-	call Calculate_cursor
+	mov ecx, .Context
+	call Resolve_context_handle
+	test al, al
+	jnz .Error1
 
-	mov edx, ecx
+	mov eax, [ds:esi + Context_type]
+	btr eax, 31
+	cmp eax, VGA_TEXT_MODE_CONTEXT
+	jne .Error2
 
-	mov ax, .Y
-	mov cx, .X
-	add ax, .Height
-	add cx, .Width
-	dec al
-	dec cl
-	call Calculate_cursor
+	movzx edi, .Count
+	test edi, edi
+	jz .Error4
 
-	mov edi, ecx
-	mov ecx, edx
+	mov al, .Y
+	mov dl, .X
+	call Check_and_calculate_cursor
+	bt eax, 31
+	jc .Error3
 
-	movzx eax, byte [fs:ebx + Var.Width]
-	add edx, eax
+	and eax, $0000FFFF
+	mov edx, eax
+	add eax, edi
+	cmp ax, [ds:esi + Text_mode_context_size]
+	ja .Error4
 
-	mov ebx, edi
-	movzx edi, .Width
-	xor esi, esi
-	mov .Screen_width, al
-
+	mov ebx, .Src
+	mov ah, .Attribute
+	add esi, Text_mode_context_buffer
+	add esi, edx
+	xor edx, edx
 	.Loop1:
-		mov ax, [fs:$80000 + edx * 2]
-		mov [fs:$80000 + ecx * 2], ax
-		mov [fs:$B8000 + ecx * 2], ax
-
-		inc ecx
+		mov al, [ds:ebx + edx]
+		mov [ds:esi + edx * 2], ax
 		inc edx
-		inc esi
-
-		cmp edx, ebx
-		ja .End_loop1
-
-		cmp esi, edi
+		cmp edx, edi
 		jb .Loop1
 
-		sub ecx, edi
-		sub edx, edi
-		movzx eax, .Screen_width
-		add ecx, eax
-		add edx, eax
-		xor esi, esi
-		jmp .Loop1
-		.End_loop1:
+	mov esi, [fs:IVideo]
+	cmp ecx, [fs:esi + Var.Active_context]
+	jne .Finish
 
-	sub ecx, edi
-	movzx eax, .Screen_width
-	add ecx, eax
-
-	mov eax, .Attribute
-	call Function_32bit_attr_to_VGA_attr
-	mov ah, al
-	xor al, al
-
+	xor edx, edx
 	.Loop2:
-		mov [fs:$80000 + ecx * 2], ax
-		mov [fs:$B8000 + ecx * 2], ax
-		inc ecx
-		cmp ecx, ebx
-		jbe .Loop2
+		mov al, [ds:ebx + edx]
+		mov [fs:$B8000 + edx * 2], ax
+		inc edx
+		cmp edx, edi
+		jb .Loop2
+
+	.Finish:
+	xor eax, eax
 
 	.Return:
 	pop edi
@@ -587,31 +627,27 @@ Function_Scroll_rect:	      ; Function 8
 	pop ebp
 	ret
 
+	.Error1:
+	mov eax, INVALID_CONTEXT_HANDLE
+	jmp .Return
+	.Error2:
+	mov eax, NOT_TEXT_MODE_CONTEXT
+	jmp .Return
+	.Error3:
+	mov eax, INVALID_CURSOR
+	jmp .Return
+	.Error4:
+	mov eax, INVALID_COUNT
+	jmp .Return
+
+	restore .Context
+	restore .Src
+	restore .Count
 	restore .Attribute
 	restore .X
 	restore .Y
-	restore .Width
-	restore .Height
-	
-Function_Get_display_size:	; Function 7
-	push ebx
-	
-	mov ebx, [fs:IVideo]
-	xor eax, eax
-
-	mov al, [fs:ebx + Var.Width]
-	mov [ss:_Result], ax
-	mov al, [fs:ebx + Var.Height]
-	mov [ss:_Result + 2], ax
-	
-	xor eax, eax
-	
-	pop ebx
-	ret
 
 Var:
-	.Width db 80
-	.Height db 25
-	.Screen_size dw 2000
 	.Cursor dw 0
 	.Flag dw 0
+	.Active_context dd 0

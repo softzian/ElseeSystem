@@ -6,6 +6,8 @@ _ModuleIdx = $FFFFFFEC
 _ThreadIdx = $FFFFFFE8
 _LDT = $20000
 
+HANDLE_VIDEO_CONTEXT = 1
+
 macro invoke x
 {
 	call dword [cs:x]
@@ -45,6 +47,19 @@ ISystem.Copy_code_to_data = ISystem + 48
 IKeyboard = $100200
 IKeyboard.Set_target_queue = IKeyboard + 4
 
+IVideo = $100800
+IVideo.Write_Telex = IVideo + 4
+IVideo.Clear_Screen = IVideo + 8
+IVideo.New_Line = IVideo + 12
+IVideo.Alloc_context = IVideo + 16
+;IVideo.Write_text_char = IVideo + 20
+;IVideo.Scroll_screen = IVideo + 24
+IVideo.Lock_context = IVideo + 28
+IVideo.Release_context = IVideo + 32
+IVideo.Switch_context = IVideo + 36
+IVideo.Write_text_char = IVideo + 44
+IVideo.Write_text_line = IVideo + 48
+
 IInterrupt = $100400
 IInterrupt.Install_ISR = IInterrupt + 4
 IInterrupt.Init_PIC = IInterrupt + 8
@@ -58,29 +73,12 @@ IThread.Start = IThread + 8
 IThread.Yield = IThread + 12
 IThread.Block_self = IThread + 16
 
-IVideo = $100800
-IVideo.Write_Telex = IVideo + 4
-IVideo.Clear_Screen = IVideo + 8
-IVideo.New_Line = IVideo + 12
-IVideo.Write_text_line = IVideo + 16
-IVideo.Write_text_char = IVideo + 20
-IVideo.Scroll_screen = IVideo + 24
-IVideo.Get_display_size = IVideo + 28
-IVideo.Scroll_rect = IVideo + 32
-
-IData = $100A00
-IData.Create_table = IData + 4
-
-IData.Modify_table = IData + 8
-IData.Finish_modify_table = IData + 12
-IData.Access_table = IData + 16
-IData.Finish_access_table = IData + 20
-
-IData.Add_table_entry = IData + 24
-IData.Delete_table_entry = IData + 28
-IData.Get_table_entry = IData + 32
-
-IData.Delete_table = IData + 36
+IHandle = $100A00
+IHandle.Create_handle = IHandle + 4
+IHandle.Delete_handle = IHandle + 8
+IHandle.Request_handle = IHandle + 12
+IHandle.Resolve_handle = IHandle + 16
+IHandle.Release_handle = IHandle + 20
 
 IConvert = $100C00
 IConvert.UTF16_to_raw_UTF32 = IConvert + 4
