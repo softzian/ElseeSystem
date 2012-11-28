@@ -142,6 +142,11 @@ Init_code_table:
 	mov [gs:ebp + 8], dword 1
 	invoke ISystem.Mark_Code
 
+	mov [gs:ebp], dword $19000
+	mov [gs:ebp + 4], dword $19FFF
+	mov [gs:ebp + 8], dword 1
+	invoke ISystem.Mark_Code
+
 	mov [gs:ebp], dword $20000
 	mov [gs:ebp + 4], dword $2FFFF
 	mov [gs:ebp + 8], dword 2

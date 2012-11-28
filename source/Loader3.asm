@@ -73,6 +73,12 @@ PXE_Loader:
 	test ax, ax
 	jnz Abort
 
+	push Var.Editor_Module
+	push dword $19000
+	call Function_Download_File
+	test ax, ax
+	jnz Abort
+
 	call Procedure_PXE_Finish
 
 Switch_to_Protected_Mode:
@@ -99,6 +105,7 @@ Var:
 	.Console_Module db 11,0,'Console.bin'
 	.Convert_Module db 11,0,'Convert.bin'
 	.Handle_Module db 10,0,'Handle.bin'
+	.Editor_Module db 10,0,'Editor.bin'
 
 	.Text db 7,0,'Success'
 	.Text2 db 'Hello World'
@@ -235,34 +242,7 @@ Begin:
 	jmp Halt32
 
 Main_thread:
-	mov [gs:ebp], dword $1000
-	invoke ISystem.Allocate
-
-	mov esi, [ss:_Result]
-
-	mov [gs:ebp], dword 1
-	invoke IVideo.Alloc_context
-
-	mov edi, [ss:_Result]
-
-	mov [gs:ebp], edi
-	invoke IVideo.Switch_context
-
-	mov [gs:ebp], edi
-	invoke IVideo.Lock_context
-
-	mov [gs:ebp], dword Var.Text2
-	mov [gs:ebp + 4], esi
-	mov [gs:ebp + 8], dword 11
-	invoke ISystem.Copy_code_to_data
-
-	mov [gs:ebp], edi
-	mov [gs:ebp + 4], esi
-	mov [gs:ebp + 8], word 11
-	mov [gs:ebp + 10], byte 00001010b
-	mov [gs:ebp + 11], byte 0
-	mov [gs:ebp + 12], byte 0
-	invoke IVideo.Write_text_line
+	jmp dword $19000
 
 Halt32:
 	hlt

@@ -33,6 +33,8 @@ IVideo = $100800
 ; Text mode context functions
 ; Function 11: Write_text_char (Context : Handle; Char : Ansi_char; Attribute : Byte; X, Y : Byte)
 ; Function 12: Write_text_line (Context : Handle; var Src : Array of Ansi_char; Count : Card16; Attribute, X, Y : Byte)
+; Function 13: Clear_text_screen (Context : Handle)
+; Function 14: Set_text_cursor (Context : Handle; X, Y : Byte)
 
 jmp Function_Init
 
@@ -54,6 +56,8 @@ IVideo_Interface:
 
 	dd Function_Write_text_char
 	dd Function_Write_text_line
+	dd Function_Clear_text_screen
+	dd Function_Set_text_cursor
 
 IVideo_Error_code:
 	INVALID_COUNT = -1
@@ -77,7 +81,8 @@ Const:
 	Text_mode_context_width = 8
 	Text_mode_context_height = 9
 	Text_mode_context_size = 10
-	Text_mode_context_buffer = 12
+	Text_mode_context_cursor = 12
+	Text_mode_context_buffer = 14
 
 	; Context type
 	VGA_TEXT_MODE_CONTEXT = 1
@@ -101,7 +106,7 @@ Function_Init:
 		add edi, 4
 		add esi, 4
 
-		cmp edi, IVideo + 4 * 12
+		cmp edi, IVideo + 4 * 14
 		jna .Loop
 
 	xor eax, eax
@@ -283,9 +288,10 @@ Function_Alloc_context: 	; Function 4
 
 Create_VGA_text_mode_context:
 	; Result in EBX
+	push ecx
 
 	; Allocate context record
-	mov [gs:ebp], dword (12 + 2000 * 2)
+	mov [gs:ebp], dword (Text_mode_context_buffer + 2000 * 2)
 	invoke ISystem.Allocate
 
 	test eax, eax
@@ -304,9 +310,14 @@ Create_VGA_text_mode_context:
 	mov [ds:ebx + Text_mode_context_height], byte 25
 	mov [ds:ebx + Text_mode_context_size], word 2000
 
-	xor eax, eax
-	ret
+	mov ecx, 2000
+	.Loop:
+	mov [ds:ebx + Text_mode_context_buffer + ecx * 2 - 2], word $0F00
+	loop .Loop
 
+	xor eax, eax
+	pop ecx
+	ret
 	.Error1:
 	mov eax, ALLOCATE_MEMORY_PROBLEM
 	ret
@@ -486,7 +497,7 @@ Function_Write_text_char:
 
 	mov al, .Y
 	mov dl, .X
-	call Check_and_calculate_cursor
+	call Check_and_calculate_coordinate
 	bt eax, 31
 	jc .Error3
 
@@ -528,7 +539,7 @@ Function_Write_text_char:
 	restore .X
 	restore .Y
 
-Check_and_calculate_cursor:
+Check_and_calculate_coordinate:
 	cmp al, [ds:esi + Text_mode_context_height]
 	jae .Error
 
@@ -580,11 +591,12 @@ Function_Write_text_line:
 
 	mov al, .Y
 	mov dl, .X
-	call Check_and_calculate_cursor
+	call Check_and_calculate_coordinate
 	bt eax, 31
 	jc .Error3
 
 	and eax, $0000FFFF
+	push eax
 	mov edx, eax
 	add eax, edi
 	cmp ax, [ds:esi + Text_mode_context_size]
@@ -607,9 +619,12 @@ Function_Write_text_line:
 	jne .Finish
 
 	xor edx, edx
+	pop esi
+	shl esi, 1
+	add esi, $B8000
 	.Loop2:
 		mov al, [ds:ebx + edx]
-		mov [fs:$B8000 + edx * 2], ax
+		mov [fs:esi + edx * 2], ax
 		inc edx
 		cmp edx, edi
 		jb .Loop2
@@ -644,6 +659,144 @@ Function_Write_text_line:
 	restore .Src
 	restore .Count
 	restore .Attribute
+	restore .X
+	restore .Y
+
+Function_Clear_text_screen:	; Function 13
+	.Context equ dword [gs:ebp - 4] ; Context : Handle
+
+	push ebp
+	add ebp, 4
+
+	push ecx
+	push edx
+	push esi
+
+	mov ecx, .Context
+	call Resolve_context_handle
+	test al, al
+	jnz .Error1
+
+	mov eax, [ds:esi + Context_type]
+	btr eax, 31
+	cmp eax, VGA_TEXT_MODE_CONTEXT
+	jne .Error2
+
+	movzx eax, word [ds:esi + Text_mode_context_width]
+	mul ah
+	mov edx, eax
+
+	xor eax, eax
+	.Loop1:
+	mov [ds:esi + Text_mode_context_buffer + eax * 2], word $0F00
+	inc eax
+	cmp eax, edx
+	jb .Loop1
+
+	mov esi, [fs:IVideo]
+	cmp ecx, [fs:esi + Var.Active_context]
+	jne .Finish
+
+	.Loop2:
+	mov [fs:$B8000 + eax * 2 - 2], word $0F00
+	dec eax
+	test eax, eax
+	jnz .Loop2
+
+	.Finish:
+	xor eax, eax
+
+	.Return:
+	pop esi
+	pop edx
+	pop ecx
+
+	pop ebp
+	ret
+
+	.Error1:
+	mov eax, INVALID_CONTEXT_HANDLE
+	jmp .Return
+	.Error2:
+	mov eax, NOT_TEXT_MODE_CONTEXT
+	jmp .Return
+
+	restore .Context
+
+Function_Set_text_cursor:	; Function 14
+	.Context equ dword [gs:ebp - 6] ; Context : Handle
+	.X equ byte [gs:ebp - 2] ; X : Byte
+	.Y equ byte [gs:ebp - 1] ; Y : Byte
+
+	push ebp
+	add ebp, 6
+
+	push ecx
+	push edx
+	push esi
+
+	mov ecx, .Context
+	call Resolve_context_handle
+	test al, al
+	jnz .Error1
+
+	mov eax, [ds:esi + Context_type]
+	btr eax, 31
+	cmp eax, VGA_TEXT_MODE_CONTEXT
+	jne .Error2
+
+	mov al, .Y
+	mov dl, .X
+	call Check_and_calculate_coordinate
+	bt eax, 31
+	jc .Error3
+
+	mov [ds:esi + Text_mode_context_cursor], ax
+	mov esi, [fs:IVideo]
+	cmp ecx, [fs:esi + Var.Active_context]
+	jne .Finish
+
+	mov cx, ax
+	mov dx, $3D4
+	in al, dx
+	mov esi, eax
+	mov al, $E
+	out dx, al
+	inc dl
+	mov al, ch
+	out dx, al
+	dec dl
+	mov al, $F
+	out dx, al
+	inc dl
+	mov al, cl
+	out dx, al
+	dec dl
+	mov eax, esi
+	out dx, al
+
+	.Finish:
+	xor eax, eax
+
+	.Return:
+	pop esi
+	pop edx
+	pop ecx
+
+	pop ebp
+	ret
+
+	.Error1:
+	mov eax, INVALID_CONTEXT_HANDLE
+	jmp .Return
+	.Error2:
+	mov eax, NOT_TEXT_MODE_CONTEXT
+	jmp .Return
+	.Error3:
+	mov eax, INVALID_CURSOR
+	jmp .Return
+
+	restore .Context
 	restore .X
 	restore .Y
 

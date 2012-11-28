@@ -22,6 +22,7 @@ IKeyboard = $100200
 jmp Function_Init
 Interface:
 	dd Function_Set_target_queue
+	dd Function_Shift_character
 
 Virtual_Codes:
 	VK_LCTRL = $E500
@@ -65,7 +66,7 @@ Function_Init:
 		add edi, 4
 		add esi, 4
 
-		cmp edi, IKeyboard + 4 * 1
+		cmp edi, IKeyboard + 4 * 2
 		jna .Loop
 
 	cli
@@ -269,45 +270,27 @@ Function_Set_target_queue:
 
 	restore .Queue
 
-Function_Cardinal_to_HexStr_32:
-	.Num equ dword [gs:ebp - 8]
-	.HexStr equ dword [gs:ebp - 4]
+Function_Shift_character:
+	.Scancode equ dword [gs:ebp - 4] ; Scancode : Cardinal
 
 	push ebp
-	add ebp, 8
+	add ebp, 4
+
 	push ebx
 	push ecx
 	push edx
+	push esi
 	push edi
 
-	mov edx, .Num
-	xor ebx, ebx
-	mov edi, .HexStr
-
-	mov cl, 7
-	.Loop:
-	mov eax, edx
-	shl cl, 2
-	shr eax, cl
-	shr cl, 2
-	and al, $F
-
-	cmp al, $A
-	jae .j1
-	add al, '0' - 0
-	jmp .j2
-	.j1: add al, 'A' - $A
-	.j2: inc ebx
-
-	mov [ds:edi + ebx - 1], al
-
-	.Continue_loop:
-	dec cl
-	jns .Loop
+	mov ebx, [fs:IKeyboard]
+	mov eax, .Scancode
+	movzx eax, word [fs:ebx + US_Layout_Shifted + eax * 2]
+	mov [ss:_Result], eax
+	xor eax, eax
 
 	.Return:
-	xor eax, eax
 	pop edi
+	pop esi
 	pop edx
 	pop ecx
 	pop ebx
@@ -315,8 +298,7 @@ Function_Cardinal_to_HexStr_32:
 	pop ebp
 	ret
 
-	restore .Num
-	restore .HexStr
+	restore .Scancode
 
 Procedure_IRQ1:
 	pusha
@@ -365,9 +347,8 @@ Processing_thread:
 	jnz .Buffer_is_empty
 
 	.Translate:
-	xor ecx, ecx
 	mov ebx, [fs:IKeyboard]
-	mov cx, [fs:ebx + US_Layout + eax * 2]
+	movzx ecx, word [fs:ebx + US_Layout + eax * 2]
 
 	test ecx, ecx
 	jz .Set_flag
@@ -565,126 +546,126 @@ US_Layout:
 	dw 0
 	end repeat
 
-Shift_Scancodes_Table:
-	._0 db 0
-	._1 db 0 ; F9
-	._2 db 0
-	._3 db 0 ; F5
-	._4 db 0 ; F3
-	._5 db 0 ; F1
-	._6 db 0 ; F2
-	._7 db 0 ; F12
-	._8 db 0
-	._9 db 0 ; F10
-	._A db 0 ; F8
-	._B db 0 ; F6
-	._C db 0 ; F4
-	._D db 0 ; Tab
-	._E db '~' ; `
-	._F db 0
+US_Layout_Shifted:
+	._0 dw 0
+	._1 dw 0 ; F9
+	._2 dw 0
+	._3 dw 0 ; F5
+	._4 dw 0 ; F3
+	._5 dw 0 ; F1
+	._6 dw 0 ; F2
+	._7 dw 0 ; F12
+	._8 dw 0
+	._9 dw 0 ; F10
+	._A dw 0 ; F8
+	._B dw 0 ; F6
+	._C dw 0 ; F4
+	._D dw 0 ; Tab
+	._E dw '~' ; `
+	._F dw 0
 
-	._10 db 0
-	._11 db 0 ; Alt
-	._12 db 0 ; Shift
-	._13 db 0
-	._14 db 0 ; Ctrl
-	._15 db 'Q' ; q
-	._16 db '!' ; 1
-	._17 db 0
-	._18 db 0
-	._19 db 0
-	._1A db 'Z' ; z
-	._1B db 'S' ; s
-	._1C db 'A' ; a
-	._1D db 'W' ; w
-	._1E db '@' ; 2
-	._1F db 0
+	._10 dw 0
+	._11 dw 0 ; Alt
+	._12 dw 0 ; Shift
+	._13 dw 0
+	._14 dw 0 ; Ctrl
+	._15 dw 'Q' ; q
+	._16 dw '!' ; 1
+	._17 dw 0
+	._18 dw 0
+	._19 dw 0
+	._1A dw 'Z' ; z
+	._1B dw 'S' ; s
+	._1C dw 'A' ; a
+	._1D dw 'W' ; w
+	._1E dw '@' ; 2
+	._1F dw 0
 
-	._20 db 0
-	._21 db 'C' ; c
-	._22 db 'X' ; x
-	._23 db 'D' ; d
-	._24 db 'E' ; e
-	._25 db '$' ; 4
-	._26 db '#' ; 3
-	._27 db 0
-	._28 db 0
-	._29 db ' ' ; Space
-	._2A db 'V' ; v
-	._2B db 'F' ; f
-	._2C db 'T' ; t
-	._2D db 'R' ; r
-	._2E db '%' ; 5
-	._2F db 0
+	._20 dw 0
+	._21 dw 'C' ; c
+	._22 dw 'X' ; x
+	._23 dw 'D' ; d
+	._24 dw 'E' ; e
+	._25 dw '$' ; 4
+	._26 dw '#' ; 3
+	._27 dw 0
+	._28 dw 0
+	._29 dw ' ' ; Space
+	._2A dw 'V' ; v
+	._2B dw 'F' ; f
+	._2C dw 'T' ; t
+	._2D dw 'R' ; r
+	._2E dw '%' ; 5
+	._2F dw 0
 
-	._30 db 0
-	._31 db 'N' ; n
-	._32 db 'B' ; b
-	._33 db 'H' ; h
-	._34 db 'G' ; g
-	._35 db 'Y' ; y
-	._36 db '^' ; 6
-	._37 db 0
-	._38 db 0
-	._39 db 0
-	._3A db 'M' ; m
-	._3B db 'J' ; j
-	._3C db 'U' ; u
-	._3D db '&' ; 7
-	._3E db '*' ; 8
-	._3F db 0
+	._30 dw 0
+	._31 dw 'N' ; n
+	._32 dw 'B' ; b
+	._33 dw 'H' ; h
+	._34 dw 'G' ; g
+	._35 dw 'Y' ; y
+	._36 dw '^' ; 6
+	._37 dw 0
+	._38 dw 0
+	._39 dw 0
+	._3A dw 'M' ; m
+	._3B dw 'J' ; j
+	._3C dw 'U' ; u
+	._3D dw '&' ; 7
+	._3E dw '*' ; 8
+	._3F dw 0
 
-	._40 db 0
-	._41 db '<' ; ,
-	._42 db 'K' ; k
-	._43 db 'I' ; i
-	._44 db 'O' ; o
-	._45 db ')' ; 0
-	._46 db '(' ; 9
-	._47 db 0
-	._48 db 0
-	._49 db '>' ; .
-	._4A db '?' ; /
-	._4B db 'L' ; l
-	._4C db ':' ; ;
-	._4D db 'P' ; p
-	._4E db '_' ; -
-	._4F db 0
+	._40 dw 0
+	._41 dw '<' ; ,
+	._42 dw 'K' ; k
+	._43 dw 'I' ; i
+	._44 dw 'O' ; o
+	._45 dw ')' ; 0
+	._46 dw '(' ; 9
+	._47 dw 0
+	._48 dw 0
+	._49 dw '>' ; .
+	._4A dw '?' ; /
+	._4B dw 'L' ; l
+	._4C dw ':' ; ;
+	._4D dw 'P' ; p
+	._4E dw '_' ; -
+	._4F dw 0
 
-	._50 db 0
-	._51 db 0
-	._52 db '"' ; '
-	._53 db 0
-	._54 db '{' ; [
-	._55 db '+' ; =
-	._56 db 0
-	._57 db 0
-	._58 db 0
-	._59 db 0 ; Right Shift
-	._5A db 13 ; Enter
-	._5B db '}' ; ]
-	._5C db 0
-	._5D db '|' ; \
-	._5E db 0
-	._5F db 0
+	._50 dw 0
+	._51 dw 0
+	._52 dw '"' ; '
+	._53 dw 0
+	._54 dw '{' ; [
+	._55 dw '+' ; =
+	._56 dw 0
+	._57 dw 0
+	._58 dw 0
+	._59 dw 0 ; Right Shift
+	._5A dw 13 ; Enter
+	._5B dw '}' ; ]
+	._5C dw 0
+	._5D dw '|' ; \
+	._5E dw 0
+	._5F dw 0
 
-	._60 db 0
-	._61 db 0
-	._62 db 0
-	._63 db 0
-	._64 db 0
-	._65 db 0
-	._66 db 8 ; Backspace
-	._67 db 0
-	._68 db 0
-	._69 db 0
-	._6A db 0
-	._6B db 0
-	._6C db 0
-	._6D db 0
-	._6E db 0
-	._6F db 0
+	._60 dw 0
+	._61 dw 0
+	._62 dw 0
+	._63 dw 0
+	._64 dw 0
+	._65 dw 0
+	._66 dw 8 ; Backspace
+	._67 dw 0
+	._68 dw 0
+	._69 dw 0
+	._6A dw 0
+	._6B dw 0
+	._6C dw 0
+	._6D dw 0
+	._6E dw 0
+	._6F dw 0
 
 	repeat $90
-	db 0
+	dw 0
 	end repeat

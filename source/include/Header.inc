@@ -46,6 +46,7 @@ ISystem.Copy_code_to_data = ISystem + 48
 
 IKeyboard = $100200
 IKeyboard.Set_target_queue = IKeyboard + 4
+IKeyboard.Shift_character = IKeyboard + 8
 
 IVideo = $100800
 IVideo.Write_Telex = IVideo + 4
@@ -59,6 +60,8 @@ IVideo.Release_context = IVideo + 32
 IVideo.Switch_context = IVideo + 36
 IVideo.Write_text_char = IVideo + 44
 IVideo.Write_text_line = IVideo + 48
+IVideo.Clear_text_screen = IVideo + 52
+IVideo.Set_text_cursor = IVideo + 56
 
 IInterrupt = $100400
 IInterrupt.Install_ISR = IInterrupt + 4
