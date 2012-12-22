@@ -19,6 +19,7 @@ IHandle = $100A00
 ; Function 3: Request_handle (Handle : Cardinal)
 ; Function 4: Resolve_handle (Handle : Cardinal) : Record [Address, Cardinal]
 ; Function 5: Release_handle (Handle : Cardinal)
+; Function 6: Modify_handle (Handle : Cardinal; Addr : Address; Semaphore : Card16)
 
 jmp Function_Init
 Interface:
@@ -44,6 +45,7 @@ Error_code:
 	CANNOT_CREATE_HANDLE_TABLE = -1
 	NO_FREE_ENTRY = -2
 	INVALID_HANDLE = -3
+	INVALID_TABLE_SIZE = -4
 
 Var:
 	.Handle_table dd 0
@@ -119,18 +121,19 @@ Function_Create_handle:
 	xor eax, eax
 
 	.Loop:
-		cmp [ds:ebx + Handle_available], byte 0
+		call Get_handle_lock2
+		cmp [ds:ebx + eax + Handle_available], byte 0
 		je .Finish
 
+		btr word [ds:ebx + eax+ Handle_lock], 0
 		add eax, ecx
 		cmp eax, edx
 		jb .Loop
 		jmp .Error1
 
 	.Finish:
+	mov ecx, eax
 	add ebx, eax
-
-	call Get_handle_lock
 
 	mov [ds:ebx + Handle_available], byte 1
 	mov dx, .Semaphore
@@ -143,9 +146,9 @@ Function_Create_handle:
 
 	btr word [ds:ebx + Handle_lock], 0
 
-	shr eax, 4
-	inc eax
-	mov [ss:_Result], eax
+	shr ecx, 4
+	inc ecx
+	mov [ss:_Result], ecx
 
 	xor eax, eax
 
@@ -160,6 +163,17 @@ Function_Create_handle:
 	.Error1:
 	mov eax, NO_FREE_ENTRY
 	jmp .Return
+
+	restore .Addr
+	restore .Semaphore
+	restore .Type
+
+Get_handle_lock2:
+	lock bts word [ds:ebx + eax + Handle_lock], 0
+	jc .Wait
+	ret
+	.Wait: invoke IThread.Yield
+	jmp Get_handle_lock2
 
 Function_Request_handle:
 	.Handle equ dword [gs:ebp - 4] ; Handle : Cardinal

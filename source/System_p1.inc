@@ -16,22 +16,19 @@
 ;               Size : Cardinal
 ;       End
 
+Region_Address equ [fs:0]
+
 Get_lock_0:
-	mov ebx, [fs:ISystem]
-
-	.Spinlock:
-	lock bts dword [fs:ebx + Var.Lock], 0
-	jnc .Return
-
-	invoke IThread.Yield
-	jmp .Spinlock
-
-	.Return:
+	lock bts word [fs:System_data + Data_region_lock], 0
+	jc .Wait
 	ret
+	.Wait:
+	invoke IThread, IThread.Yield
+	jmp Get_lock_0
 
 Release_lock_0:
 	mov ebx, [fs:ISystem]
-	lock btr dword [fs:ebx + Var.Lock], 0
+	btr word [fs:System_data + Data_region_lock], 0
 	ret
 
 Function_Create_Region:  ; Function 1
@@ -49,26 +46,31 @@ Function_Create_Region:  ; Function 1
 	jnz .Error1
 
 	mov ebx, .Start
+	mov eax, .Limit
+	cmp eax, ebx
+	jbe .Error2
 
-	cmp ebx, Region_Address
-	jae .Error2	 ; Region size must be > $4000
+	sub eax, ebx
+	cmp eax, SizeOf_Data_Region
+	jb .Error2	; Region size must be > $4000
 
-	; Zero fill $4000 byte from $FFFFC000 to $FFFFFFFF
+	; Zero fill $4000 bytes
 	xor ecx, ecx
-	mov eax, Region_Address
 	.Fill_zero:
-	mov dword [eax + ecx * 8], 0
-	mov dword [eax + ecx * 8 + 4], 0
-	inc ecx
-	cmp ecx, $800
-	jb .Fill_zero
+		mov dword [fs:ebx + ecx], 0
+		mov dword [fs:ebx + ecx + 4], 0
+		add ecx, 8
+		cmp ecx, SizeOf_Data_Region
+		jb .Fill_zero
 
 	; Create the first entry
-	mov ecx, eax
-	mov [eax + SizeOf_Region_Header + 4], ebx
-	sub ecx, ebx
-	mov [eax + SizeOf_Region_Header + 8], ecx
+	inc eax
+	sub eax, SizeOf_Data_Region
+	add ecx, ebx
+	mov [fs:ebx + SizeOf_Region_Header + 4], ecx
+	mov [fs:ebx + SizeOf_Region_Header + 8], eax
 
+	mov Region_Address, ebx
 	xor eax, eax
 
 	.Return:
@@ -76,9 +78,11 @@ Function_Create_Region:  ; Function 1
 	pop ebx
 	pop ebp
 	ret
+
 	.Error1:
 	mov eax, SUBINTERFACE_UNAVAILABLE
 	jmp .Return
+
 	.Error2:
 	mov eax, REGION_SIZE_IS_NOT_LARGE_ENOUGH
 	jmp .Return
@@ -105,16 +109,17 @@ Function_Allocate:    ; Function 2
 	.Step1:
 	xor ecx, ecx
 	mov eax, .Size
-	mov ebx, Region_Address + SizeOf_Region_Header
+	mov ebx, Region_Address
+	add ebx, SizeOf_Region_Header
 
 	.Loop1:
-		cmp dword [ebx + ecx + 4], 0
+		cmp dword [fs:ebx + ecx + 4], 0
 		je .Error2
 
-		cmp dword [ebx + ecx], 0
+		cmp dword [fs:ebx + ecx], 0
 		jne .Next1
 
-		mov esi, [ebx + ecx + 8]
+		mov esi, [fs:ebx + ecx + 8]
 		cmp eax, esi
 		je .Alloc	; Jump to Step 3
 		jb .Find_Best_Fit	; Jump to Step 2
@@ -132,13 +137,13 @@ Function_Allocate:    ; Function 2
 	je .Alloc	; If no more entries to search, jump to Step 3
 
 	.Loop2:
-		cmp dword [ebx + edx + 4], 0
+		cmp dword [fs:ebx + edx + 4], 0
 		je .Alloc
 
-		cmp dword [ebx + edx], 0
+		cmp dword [fs:ebx + edx], 0
 		jne .Next2
 
-		mov edi, [ebx + edx + 8]
+		mov edi, [fs:ebx + edx + 8]
 		cmp eax, edi
 		ja .Next2
 		je .End_Loop2
@@ -166,10 +171,10 @@ Function_Allocate:    ; Function 2
 
 	.Done:
 	mov eax, [ss:_ModuleIdx] ; Active module address
-	mov [ebx + ecx], eax
+	mov [fs:ebx + ecx], eax
 
 	; Return new pointer
-	mov eax, [ebx + ecx + 4]
+	mov eax, [fs:ebx + ecx + 4]
 	mov [ss:_Result], eax
 	xor eax, eax
 
@@ -198,7 +203,7 @@ Function_Split_Entry:	; Parameter is the size we want to split
 	; Step 1 - Find first blank entry after entry ecx
 	mov edx, ecx
 	.Loop1:
-		cmp dword [ebx + edx + 4], 0
+		cmp dword [fs:ebx + edx + 4], 0
 		je .Loop2
 		add edx, SizeOf_Memory_Entry
 		cmp edx, SizeOf_Memory_Table
@@ -208,12 +213,12 @@ Function_Split_Entry:	; Parameter is the size we want to split
 	; Step 2 - Move all the non-blank entries after entry ecx
 	;          and copy ecx entry to the entry after it
 	.Loop2:
-		mov eax, [ebx + edx - SizeOf_Memory_Entry]
-		mov [ebx + edx], eax
-		mov eax, [ebx + edx - SizeOf_Memory_Entry + 4]
-		mov [ebx + edx + 4], eax
-		mov eax, [ebx + edx - SizeOf_Memory_Entry + 8]
-		mov [ebx + edx + 8], eax
+		mov eax, [fs:ebx + edx - SizeOf_Memory_Entry]
+		mov [fs:ebx + edx], eax
+		mov eax, [fs:ebx + edx - SizeOf_Memory_Entry + 4]
+		mov [fs:ebx + edx + 4], eax
+		mov eax, [fs:ebx + edx - SizeOf_Memory_Entry + 8]
+		mov [fs:ebx + edx + 8], eax
 
 		sub edx, SizeOf_Memory_Entry
 		cmp edx, ecx
@@ -221,9 +226,9 @@ Function_Split_Entry:	; Parameter is the size we want to split
 
 	; Step 3 - Update entries content
 	mov eax, [gs:ebp - 4]
-	mov [ebx + ecx + 8], eax
-	sub [ebx + ecx + SizeOf_Memory_Entry + 8], eax
-	add [ebx + ecx + SizeOf_Memory_Entry + 4], eax
+	mov [fs:ebx + ecx + 8], eax
+	sub [fs:ebx + ecx + SizeOf_Memory_Entry + 8], eax
+	add [fs:ebx + ecx + SizeOf_Memory_Entry + 4], eax
 
 	xor eax, eax
 	.Return:
@@ -247,11 +252,12 @@ Function_Deallocate:	; Function 3
 	; Step 1 - Find Entry
 	.Step1:
 	mov eax, .Ptr
-	mov ebx, Region_Address + SizeOf_Region_Header
+	mov ebx, Region_Address
+	add ebx, SizeOf_Region_Header
 	xor ecx, ecx
 
 	.Loop1:
-		mov edx, [ebx + ecx + 4]
+		mov edx, [fs:ebx + ecx + 4]
 		test edx, edx
 		jz .Not_Found
 		cmp edx, eax
@@ -264,7 +270,7 @@ Function_Deallocate:	; Function 3
 
 	; Step 2 - Mark entry as free and Merge entries
 	.Found:
-	mov [ebx + ecx], dword 0
+	mov [fs:ebx + ecx], dword 0
 	call Function_Merge_Entry	; Merge entries around ECX
 
 	xor eax, eax
@@ -290,20 +296,20 @@ Function_Merge_Entry:	; Merge entries around ECX
 	test ecx, ecx
 	jz .Next
 
-	mov eax, [ebx + ecx]
-	cmp eax, [ebx + ecx - SizeOf_Memory_Entry]
+	mov eax, [fs:ebx + ecx]
+	cmp eax, [fs:ebx + ecx - SizeOf_Memory_Entry]
 	jne .Next
 
 	sub ecx, SizeOf_Memory_Entry
-	mov eax, [ebx + ecx + SizeOf_Memory_Entry + 8]
-	add [ebx + ecx + 8], eax
+	mov eax, [fs:ebx + ecx + SizeOf_Memory_Entry + 8]
+	add [fs:ebx + ecx + 8], eax
 
-	mov eax, [ebx + ecx + SizeOf_Memory_Entry * 2]
-	mov [ebx + ecx + SizeOf_Memory_Entry], eax
-	mov eax, [ebx + ecx + SizeOf_Memory_Entry * 2 + 4]
-	mov [ebx + ecx + SizeOf_Memory_Entry + 4], eax
-	mov eax, [ebx + ecx + SizeOf_Memory_Entry * 2 + 8]
-	mov [ebx + ecx + SizeOf_Memory_Entry + 8], eax
+	mov eax, [fs:ebx + ecx + SizeOf_Memory_Entry * 2]
+	mov [fs:ebx + ecx + SizeOf_Memory_Entry], eax
+	mov eax, [fs:ebx + ecx + SizeOf_Memory_Entry * 2 + 4]
+	mov [fs:ebx + ecx + SizeOf_Memory_Entry + 4], eax
+	mov eax, [fs:ebx + ecx + SizeOf_Memory_Entry * 2 + 8]
+	mov [fs:ebx + ecx + SizeOf_Memory_Entry + 8], eax
 
 	add edx, SizeOf_Memory_Entry
 
@@ -313,12 +319,12 @@ Function_Merge_Entry:	; Merge entries around ECX
 	cmp eax, SizeOf_Memory_Table
 	je .Move
 
-	mov eax, [ebx + eax]
-	cmp eax, [ebx + ecx]
+	mov eax, [fs:ebx + eax]
+	cmp eax, [fs:ebx + ecx]
 	jne .Move
 
-	mov eax, [ebx + ecx + SizeOf_Memory_Entry + 8]
-	add [ebx + ecx + 8], eax
+	mov eax, [fs:ebx + ecx + SizeOf_Memory_Entry + 8]
+	add [fs:ebx + ecx + 8], eax
 
 	add edx, SizeOf_Memory_Entry
 
@@ -336,18 +342,18 @@ Function_Merge_Entry:	; Merge entries around ECX
 	add edx, ebx
 
 	.Loop:
-		cmp [ebx + ecx + 4], dword 0
+		cmp [fs:ebx + ecx + 4], dword 0
 		jne .a
 		sub ecx, SizeOf_Memory_Entry
 		jmp .End_Loop
 
 		.a:
-		mov eax, [ebx + ecx]
-		mov [edx + ecx], eax
-		mov eax, [ebx + ecx + 4]
-		mov [edx + ecx + 4], eax
-		mov eax, [ebx + ecx + 8]
-		mov [edx + ecx + 8], eax
+		mov eax, [fs:ebx + ecx]
+		mov [fs:edx + ecx], eax
+		mov eax, [fs:ebx + ecx + 4]
+		mov [fs:edx + ecx + 4], eax
+		mov eax, [fs:ebx + ecx + 8]
+		mov [fs:edx + ecx + 8], eax
 
 		add ecx, SizeOf_Memory_Entry
 		cmp ecx, SizeOf_Memory_Table
@@ -359,16 +365,16 @@ Function_Merge_Entry:	; Merge entries around ECX
 
 	.Finish:
 	xor eax, eax
-	mov [ebx + ecx + SizeOf_Memory_Entry], eax
-	mov [ebx + ecx + SizeOf_Memory_Entry + 4], eax
-	mov [ebx + ecx + SizeOf_Memory_Entry + 8], eax
+	mov [fs:ebx + ecx + SizeOf_Memory_Entry], eax
+	mov [fs:ebx + ecx + SizeOf_Memory_Entry + 4], eax
+	mov [fs:ebx + ecx + SizeOf_Memory_Entry + 8], eax
 
 	cmp edx, -(SizeOf_Memory_Entry * 2)
 	jne .Return
 
-	mov [ebx + ecx + SizeOf_Memory_Entry * 2], eax
-	mov [ebx + ecx + SizeOf_Memory_Entry * 2 + 4], eax
-	mov [ebx + ecx + SizeOf_Memory_Entry * 2 + 8], eax
+	mov [fs:ebx + ecx + SizeOf_Memory_Entry * 2], eax
+	mov [fs:ebx + ecx + SizeOf_Memory_Entry * 2 + 4], eax
+	mov [fs:ebx + ecx + SizeOf_Memory_Entry * 2 + 8], eax
 
 	.Return:
 	ret
@@ -395,21 +401,22 @@ Function_Mark_Memory:	; Function 4
 	inc eax
 
 	; Step 1 - Find entry
-	mov ebx, Region_Address + SizeOf_Region_Header
+	mov ebx, Region_Address
+	add ebx, SizeOf_Region_Header
 	xor ecx, ecx
 
 	.Loop1:
-		mov esi, [ebx + ecx + 4]
+		mov esi, [fs:ebx + ecx + 4]
 		test esi, esi
 		jz .Error3	; No more entry to find
 
-		cmp [ebx + ecx], dword 0
+		cmp [fs:ebx + ecx], dword 0
 		jne .Next1
 
 		cmp esi, edx
 		ja .Next1
 
-		add esi, [ebx + ecx + 8]
+		add esi, [fs:ebx + ecx + 8]
 		sub esi, eax
 		jnc .Found
 
@@ -421,7 +428,7 @@ Function_Mark_Memory:	; Function 4
 
 	; Step 2 - Split entry
 	.Found:
-	sub edx, [ebx + ecx + 4]
+	sub edx, [fs:ebx + ecx + 4]
 	jz .Next2
 
 	mov [gs:ebp], edx
@@ -436,14 +443,14 @@ Function_Mark_Memory:	; Function 4
 	jz .Finish
 
 	neg esi
-	add esi, [ebx + ecx + 8]
+	add esi, [fs:ebx + ecx + 8]
 
 	mov [gs:ebp], esi
 	call Function_Split_Entry
 
 	.Finish:
 	mov eax, .Module_Idx
-	mov [ebx + ecx], eax
+	mov [fs:ebx + ecx], eax
 	xor eax, eax
 
 	.Return:
@@ -469,3 +476,5 @@ Function_Mark_Memory:	; Function 4
 	restore .Start
 	restore .Limit
 	restore .Module_Idx
+
+restore Region_Address

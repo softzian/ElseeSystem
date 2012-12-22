@@ -1,4 +1,4 @@
-; System_p1.inc - Part 2 of System.asm
+; System_p2.inc - Part 2 of System.asm
 ; Written in 2012 by Congdm
 ;
 ; To the extent possible under law, the author(s) have dedicated
@@ -17,21 +17,15 @@
 ;       End
 
 Get_lock_1:
-	mov ebx, [fs:ISystem]
-
-	.Spinlock:
-	lock bts dword [fs:ebx + Var.Lock], 1
-	jnc .Return
-
-	invoke IThread.Yield
-	jmp .Spinlock
-
-	.Return:
+	lock bts word [fs:System_data + Code_region_lock], 0
+	jc .Wait
 	ret
+	.Wait:
+	invoke IThread, IThread.Yield
+	jmp Get_lock_1
 
 Release_lock_1:
-	mov ebx, [fs:ISystem]
-	lock btr dword [fs:ebx + Var.Lock], 1
+	btr word [fs:System_data + Code_region_lock], 0
 	ret
 
 Function_Create_Code_Region:  ; Function 5
@@ -47,22 +41,21 @@ Function_Create_Code_Region:  ; Function 5
 	cmp eax, SizeOf_Code_Region
 	jb .Error2	; Region size must be > $4000
 
-	xor ebx, ebx
-
-	; Zero fill $4000 byte
-	xor ecx, ecx
+	; Zero fill $4000 bytes (except byte 0)
+	mov dword [fs:4], 0
+	mov ecx, 1
 	.Fill_zero:
-	mov dword [fs:ebx + ecx * 8], 0
-	mov dword [fs:ebx + ecx * 8 + 4], 0
-	inc ecx
-	cmp ecx, SizeOf_Code_Region / 8
-	jb .Fill_zero
+		mov dword [fs:ecx * 8], 0
+		mov dword [fs:ecx * 8 + 4], 0
+		inc ecx
+		cmp ecx, SizeOf_Code_Region / 8
+		jb .Fill_zero
 
 	; Create the first entry
-	lea ecx, [fs:ebx + SizeOf_Code_Region]
-	mov [fs:ebx + SizeOf_Code_Header + 4], ecx
+	mov ecx, SizeOf_Code_Region
+	mov [fs:SizeOf_Code_Header + 4], ecx
 	sub eax, (SizeOf_Code_Region - 1)
-	mov [fs:ebx + SizeOf_Code_Header + 8], eax
+	mov [fs:SizeOf_Code_Header + 8], eax
 
 	xor eax, eax
 

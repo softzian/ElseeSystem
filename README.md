@@ -8,14 +8,12 @@ It isn't an OS yet and for now, this project only provide some basic modules in 
 
 Design goals:
   - Support PC/AT Compatible System with IA-32 processor
-  - Single Address Space Environment (not exactly a single address space,  codes and data are seperated)
   - Modular system
   - Direct hardware access
-<br>The three last goals will never be changed, if it can not be achived, I will start a new project.
   
 See doc/INSTALL.txt for install guide
 
-See Wiki or doc for more infomation
+See Wiki or doc for more infomation (this project is under major changes so doc maybe outdated)
 
 My references:
   - http://wiki.osdev.org ; An useful source for code examples and information

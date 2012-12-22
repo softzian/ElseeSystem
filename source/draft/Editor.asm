@@ -1,4 +1,4 @@
-; Editor.asm - Simple editor
+; Editor.asm - Simple editor (bad example :))
 ; Written in 2012 by Congdm
 ;
 ; To the extent possible under law, the author(s) have dedicated

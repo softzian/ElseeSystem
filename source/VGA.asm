@@ -13,7 +13,7 @@ include 'include\Header.inc'
 include 'include\errcode.inc'
 use32
 
-IVideo = $100800
+IVideo = $10000C
 ; The first three functions are for debug purpose
 ; Function 1: Write_Telex (var Text : Array of Char; Count : Word)
 ; Function 2: Clear_Screen
@@ -36,9 +36,9 @@ IVideo = $100800
 ; Function 13: Clear_text_screen (Context : Handle)
 ; Function 14: Set_text_cursor (Context : Handle; X, Y : Byte)
 
-jmp Function_Init
-
-IVideo_Interface:
+dd Function_Init
+dd Header
+Interface:
 	dd Function_Write_Telex
 	dd Function_Clear_Screen
 	dd Function_New_Line
@@ -58,6 +58,8 @@ IVideo_Interface:
 	dd Function_Write_text_line
 	dd Function_Clear_text_screen
 	dd Function_Set_text_cursor
+
+Header:
 
 IVideo_Error_code:
 	INVALID_COUNT = -1
@@ -93,21 +95,15 @@ Function_Init:
 	push esi
 
 	mov ebx, eax
-	mov edi, IVideo
-	lea esi, [eax + IVideo_Interface]
-	mov [fs:edi], eax
-	add edi, 4
+	lea esi, [eax + Interface]
+	mov [fs:IVideo], eax
 
+	xor eax, eax
 	.Loop:
-		mov eax, [fs:esi]
-		add eax, ebx
-		mov [fs:edi], eax
-
-		add edi, 4
-		add esi, 4
-
-		cmp edi, IVideo + 4 * 14
-		jna .Loop
+		add [fs:esi + eax], ebx
+		add eax, 4
+		cmp eax, 4 * 14
+		jb .Loop
 
 	xor eax, eax
 
@@ -263,7 +259,7 @@ Function_Alloc_context: 	; Function 4
 	mov [gs:ebp], ebx
 	mov [gs:ebp + 4], dword HANDLE_VIDEO_CONTEXT
 	mov [gs:ebp + 8], word 1
-	invoke IHandle.Create_handle
+	invoke IHandle, IHandle.Create_handle
 
 	test eax, eax
 	jnz .Error2
@@ -280,7 +276,7 @@ Function_Alloc_context: 	; Function 4
 
 	.Error2:
 	mov [gs:ebp], ebx
-	invoke ISystem.Deallocate
+	invoke ISystem, ISystem.Deallocate
 	mov eax, CANNOT_CREATE_HANDLE
 	jmp .Return
 
@@ -292,7 +288,7 @@ Create_VGA_text_mode_context:
 
 	; Allocate context record
 	mov [gs:ebp], dword (Text_mode_context_buffer + 2000 * 2)
-	invoke ISystem.Allocate
+	invoke ISystem, ISystem.Allocate
 
 	test eax, eax
 	jnz .Error1
@@ -323,11 +319,11 @@ Create_VGA_text_mode_context:
 	ret
 
 Function_Lock_context:		; Function 7
-	invoke IHandle.Request_handle
+	invoke IHandle, IHandle.Request_handle
 	ret
 
 Function_Release_context:	; Function 8
-	invoke IHandle.Release_handle
+	invoke IHandle, IHandle.Release_handle
 	ret
 
 Resolve_context_handle:
@@ -338,7 +334,7 @@ Resolve_context_handle:
 	push edi
 
 	mov [gs:ebp], ecx
-	invoke IHandle.Resolve_handle
+	invoke IHandle, IHandle.Resolve_handle
 
 	test eax, eax
 	jnz .Error1
@@ -466,6 +462,9 @@ Restore_text_mode_context:
 		inc ecx
 		cmp ecx, edx
 		jb .Loop
+
+	mov ax, [ds:esi + Text_mode_context_cursor]
+	call Set_VGA_text_cursor
 
 	pop edx
 	pop ecx
@@ -723,6 +722,34 @@ Function_Clear_text_screen:	; Function 13
 
 	restore .Context
 
+Set_VGA_text_cursor:
+	; AX : Cursor position (linear)
+	push ecx
+	push edx
+
+	mov cx, ax
+	mov dx, $3D4
+	in al, dx
+	push eax
+	mov al, $E
+	out dx, al
+	inc dl
+	mov al, ch
+	out dx, al
+	dec dl
+	mov al, $F
+	out dx, al
+	inc dl
+	mov al, cl
+	out dx, al
+	dec dl
+	pop eax
+	out dx, al
+
+	pop edx
+	pop ecx
+	ret
+
 Function_Set_text_cursor:	; Function 14
 	.Context equ dword [gs:ebp - 6] ; Context : Handle
 	.X equ byte [gs:ebp - 2] ; X : Byte
@@ -756,24 +783,7 @@ Function_Set_text_cursor:	; Function 14
 	cmp ecx, [fs:esi + Var.Active_context]
 	jne .Finish
 
-	mov cx, ax
-	mov dx, $3D4
-	in al, dx
-	mov esi, eax
-	mov al, $E
-	out dx, al
-	inc dl
-	mov al, ch
-	out dx, al
-	dec dl
-	mov al, $F
-	out dx, al
-	inc dl
-	mov al, cl
-	out dx, al
-	dec dl
-	mov eax, esi
-	out dx, al
+	call Set_VGA_text_cursor
 
 	.Finish:
 	xor eax, eax

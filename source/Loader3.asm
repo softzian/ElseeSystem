@@ -79,6 +79,24 @@ PXE_Loader:
 	test ax, ax
 	jnz Abort
 
+	push Var.Data_Module
+	push dword $30000
+	call Function_Download_File
+	test ax, ax
+	jnz Abort
+
+	push Var.Network_Module
+	push dword $31000
+	call Function_Download_File
+	test ax, ax
+	jnz Abort
+
+	push Var.RTL8139_Module
+	push dword $32000
+	call Function_Download_File
+	test ax, ax
+	jnz Abort
+
 	call Procedure_PXE_Finish
 
 Switch_to_Protected_Mode:
@@ -106,6 +124,9 @@ Var:
 	.Convert_Module db 11,0,'Convert.bin'
 	.Handle_Module db 10,0,'Handle.bin'
 	.Editor_Module db 10,0,'Editor.bin'
+	.Data_Module db 8,0,'Data.bin'
+	.Network_Module db 11,0,'Network.bin'
+	.RTL8139_Module db 11,0,'RTL8139.bin'
 
 	.Text db 7,0,'Success'
 	.Text2 db 'Hello World'
@@ -164,48 +185,42 @@ enable_A20:
 GDT:
 	.gdt_null:	; 0
 		dq 0
-	.gdt_code:	; 1
+	.gdt_code:	; 1 - CS
 		dw $01FF
 		dw 0
 		db 0
 		db 10011010b
-		db 11001111b
+		db 11000000b
 		db 0
-	.gdt_gdata:	; 2
+	.gdt_gdata:	; 2 - FS
 		dw $FFFF
 		dw 0
 		db 0
 		db 10010010b
 		db 11001111b
 		db 0
-	.gdt_data:	; 3
-		dw $FDFF
+	.gdt_data:	; 3 - DS
+		dw $01FF
 		dw 0
-		db $40
-		db 10010110b
-		db 11001111b
-		db 0
-	.gdt_stack1:	; 4
-		dw $FFFE
-		dw $7000
-		db 0
-		db 10010110b
-		db 11001111b
-		db 0
-	.gdt_stack2:	; 5
-		dw 0
-		dw $4000
-		db 0
+		db $20
 		db 10010010b
 		db 11000000b
 		db 0
-	.ldt:		; 6
-		dw $000F
+	.gdt_stack1:	; 4 - SS
+		dw $FFFE
+		dw $5000
+		db 2
+		db 10010110b
+		db 11001111b
+		db 0
+	.gdt_stack2:	; 5 - GS
 		dw 0
-		db $2
-		db 10000010b
+		dw $0000
+		db 2
+		db 10010010b
 		db 11000000b
 		db 0
+
 GDT_end:
 GDT_Desc:
 	dw GDT_end - GDT
@@ -229,24 +244,40 @@ Begin:
 	mov gs, ax
 	mov ebp, 16
 
-	xor eax, eax
-	xor ecx, ecx
-	.Loop1:
-		mov [fs:_LDT + ecx], eax
-		add ecx, 4
-		cmp ecx, $10000
-		jb .Loop1
+	mov [fs:$4000], dword 0
+	mov [fs:$4004], dword GDT
+	mov [fs:$4008], dword 0
+	mov [fs:$400C], dword 0
+	mov [fs:$4010], dword 0
+	mov [fs:$4014], dword Function_Cardinal_to_HexStr_32
 
 	call Init_base_system
 
 	jmp Halt32
 
 Main_thread:
-	jmp dword $19000
+	mov [fs:$B8000], byte 'b'
+	mov [fs:$B8001], byte 1100b
+;        mov [gs:ebp], dword Packet
+;        mov [gs:ebp + 4], dword $FFFF1000
+;        mov [gs:ebp + 8], dword 11
+;        invoke ISystem.Copy_code_to_data
+;
+;        mov [gs:ebp], dword 1
+;        mov [gs:ebp + 4], dword $FFFFFFFF
+;        mov [gs:ebp + 8], word $FFFF
+;        mov [gs:ebp + 10], dword $FFFF1000
+;        mov [gs:ebp + 14], word 11
+;        mov [gs:ebp + 16], word $9
+;        invoke INetwork.Transmit
+	;jmp dword $19000
 
 Halt32:
 	hlt
 	jmp Halt32
+
+Packet:
+	db 'Hello World'
 
 Function_Cardinal_to_HexStr_32:
 	.Num equ dword [gs:ebp - 8]

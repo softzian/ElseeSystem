@@ -15,19 +15,33 @@ include 'include/Errcode.inc'
 Const:
 	SizeOf_Region_Header = 4
 	SizeOf_Memory_Entry = 12
-	SizeOf_Memory_Table = ($4000 - SizeOf_Region_Header)
-	Region_Address = $FFFFFFFF - $4000 + 1
+	SizeOf_Memory_Table = (SizeOf_Data_Region - SizeOf_Region_Header)
+	SizeOf_Data_Region = $4000
 
 	SizeOf_Code_Header = 4
 	SizeOf_Code_Entry = 12
 	SizeOf_Code_Region = $4000
 	SizeOf_Code_Table = (SizeOf_Code_Region - SizeOf_Code_Header)
 
+	System_data = $4000	; Address of global system data block
+	_Lock = 0
+	GDT_address = 4
+	GDT_size = 8
+	Data_region_lock = 12
+	Code_region_lock = 14
+
+	GDT_lock = 0
+	Module_table_lock = 1
+
 Error_Code:
 	REGION_SIZE_IS_NOT_LARGE_ENOUGH = -1
 	NON_POSITIVE_SIZE = INVALID_SIZE
 	MESSAGE_QUEUE_FULL = -2
 	MESSAGE_QUEUE_EMPTY = -3
+
+	CANNOT_ALLOCATE_MEMORY = -4
+	NOT_EXISTED_MODULE = -5
+	INVALID_GDT_ENTRY = -6
 
 use32
 
@@ -47,8 +61,17 @@ ISystem = $100000
 ; Function 11: Get_Message (Queue : Address) : Message
 
 ; Function 12: Copy_code_to_data (Src, Dst : Address; Count : Cardinal)
+; Function 13: Copy_data_to_code (Src, Dst : Address; Count : Cardinal)
 
-jmp Function_Init
+; Function 14: Copy_data_to_code (Src, Dst : Address; Count : Cardinal)
+; Function 15: Copy_data_to_code (Src, Dst : Address; Count : Cardinal)
+; Function 16: Copy_data_to_code (Src, Dst : Address; Count : Cardinal)
+; Function 17: Copy_data_to_code (Src, Dst : Address; Count : Cardinal)
+; Function 18: Copy_data_to_code (Src, Dst : Address; Count : Cardinal)
+; Function 19: Copy_data_to_code (Src, Dst : Address; Count : Cardinal)
+
+dd Function_Init
+dd Header
 Interface:
 	dd Function_Create_Region
 	dd Function_Allocate
@@ -65,9 +88,15 @@ Interface:
 	dd Function_Get_Message
 
 	dd Function_Copy_code_to_data
+	dd Function_Copy_data_to_code
 
-Var:
-	.Lock dd 0
+	dd Function_Register_Module
+	dd Function_Set_module_thread_table
+	dd Function_Get_module_thread_table
+	dd Function_Modify_GDT_entry
+	dd Function_Save_GDT_entry
+	dd Function_Load_GDT_entry
+Header:
 
 Function_Init:
 	push ebx
@@ -75,21 +104,23 @@ Function_Init:
 	push esi
 
 	mov ebx, eax
-	mov edi, ISystem
 	lea esi, [eax + Interface]
-	mov [fs:edi], eax
-	add edi, 4
+	mov [fs:ISystem], eax
 
+	xor eax, eax
 	.Loop:
-		mov eax, [fs:esi]
-		add eax, ebx
-		mov [fs:edi], eax
+		add [fs:esi + eax], ebx
+		add eax, 4
+		cmp eax, 4 * 19
+		jb .Loop
 
-		add edi, 4
-		add esi, 4
-
-		cmp edi, ISystem + 4 * 12
-		jna .Loop
+	mov esi, Module_Table
+	xor eax, eax
+	.Loop2:
+		mov [fs:esi + eax], dword 0
+		add eax, 4
+		cmp eax, SizeOf_Module_Table
+		jb .Loop2
 
 	pop esi
 	pop edi
@@ -152,7 +183,7 @@ Get_Queue_lock:
 	ret
 
 	.Wait:
-	invoke IThread.Yield
+	invoke IThread, IThread.Yield
 	jmp Get_Queue_lock
 
 Function_Send_Message:		; Function 10
@@ -298,3 +329,38 @@ Function_Copy_code_to_data:	; Function 12
 	restore .Src
 	restore .Dst
 	restore .Count
+
+Function_Copy_data_to_code:	; Function 13
+	.Src equ dword [gs:ebp - 12]	; Src : Address
+	.Dst equ dword [gs:ebp - 8]	; Dst : Address
+	.Count equ dword [gs:ebp - 4]	; Count : Cardinal
+
+	push ebp
+	add ebp, 12
+	push ecx
+	push esi
+	push edi
+
+	mov edi, .Dst
+	mov esi, .Src
+	mov ecx, .Count
+
+	.Loop:
+		mov al, [ds:esi]
+		mov [fs:edi], al
+		inc esi
+		inc edi
+		loop .Loop
+
+	.Return:
+	pop edi
+	pop esi
+	pop ecx
+	pop ebp
+	ret
+
+	restore .Src
+	restore .Dst
+	restore .Count
+
+include 'System_p3.inc'

@@ -13,14 +13,15 @@ include 'include\errcode.inc'
 include 'include\Header.inc'
 use32
 
-IInterrupt = $100400
+IInterrupt = $100004
 ; Function 1: Install_ISR (INum : Byte; ISR_Entry : Address)
 ; Function 2: Init_PIC
 ; Function 3: Mask_all_IRQ
 ; Function 4: Enable_IRQ (IRQNum : Byte)
 ; Function 5: Send_EOI
 
-jmp Function_Init
+dd Function_Init
+dd Header
 Interface:
 	.Install_ISR dd Function_Install_ISR
 	.Init_PIC dd Function_Init_PIC
@@ -28,27 +29,23 @@ Interface:
 	.Enable_IRQ dd Function_Enable_IRQ
 	.Send_EOI dd Function_Send_EOI
 
+Header:
+
 Function_Init:
 	push ebx
 	push edi
 	push esi
 
 	mov ebx, eax
-	mov edi, IInterrupt
 	lea esi, [eax + Interface]
-	mov [fs:edi], eax
-	add edi, 4
+	mov [fs:IInterrupt], eax
 
+	xor eax, eax
 	.Loop:
-		mov eax, [fs:esi]
-		add eax, ebx
-		mov [fs:edi], eax
-
-		add edi, 4
-		add esi, 4
-
-		cmp edi, IInterrupt + 4 * 5
-		jna .Loop
+		add [fs:esi + eax], ebx
+		add eax, 4
+		cmp eax, 4 * 5
+		jb .Loop
 
 	add [fs:ebx + IDTR.Base], ebx
 	lidt [fs:ebx + IDTR]
@@ -170,108 +167,32 @@ Function_Send_EOI:
 	out $20, al
 	ret
 
-Function_Cardinal_to_HexStr_32:
-	.Num equ dword [gs:ebp - 8]
-	.HexStr equ dword [gs:ebp - 4]
-
-	push ebp
-	add ebp, 8
-	push ebx
-	push ecx
-	push edx
-	push edi
-
-	mov edx, .Num
-	xor ebx, ebx
-	mov edi, .HexStr
-
-	mov cl, 7
-	.Loop:
-	mov eax, edx
-	shl cl, 2
-	shr eax, cl
-	shr cl, 2
-	and al, $F
-
-	cmp al, $A
-	jae .j1
-	add al, '0' - 0
-	jmp .j2
-	.j1: add al, 'A' - $A
-	.j2: inc ebx
-
-	mov [ds:edi + ebx - 1], al
-
-	.Continue_loop:
-	dec cl
-	jns .Loop
-
-	.Return:
-	xor eax, eax
-	pop edi
-	pop edx
-	pop ecx
-	pop ebx
-
-	pop ebp
-	ret
-
-	restore .Num
-	restore .HexStr
-
 macro Write str, x
 {
 	lea eax, [str + 1]
 	mov [gs:ebp], eax
-	mov [gs:ebp + 4], dword $FFFE0000
+	mov [gs:ebp + 4], dword $110000
 	xor eax, eax
 	mov al, byte [fs:str]
 	mov [gs:ebp + 8], eax
-	invoke ISystem.Copy_code_to_data
+	invoke ISystem, ISystem.Copy_code_to_data
 
 	xor eax, eax
 	mov al, byte [fs:str]
-	mov [gs:ebp], dword $FFFE0000
+	mov [gs:ebp], dword $110000
 	mov [gs:ebp + 4], ax
-	invoke IVideo.Write_Telex
+	invoke IVideo, IVideo.Write_Telex
 
 	mov eax, x
 	Write_register eax
 
-	invoke IVideo.New_Line
+	invoke IVideo, IVideo.New_Line
 }
-
-Print_Memory_Table:
-	xor ecx, ecx
-
-	.Loop:
-	;push dword ecx
-	;invoke IUtility.Write_Cardinal_Hex
-	;mov [esp - 1], byte ' '
-	;dec esp
-	;invoke IUtility.Write_Char
-
-	mov eax, [ds:$FFFFC000 + 4 + ecx]
-	Write_register eax
-
-	mov eax, [ds:$FFFFC000 + 4 + ecx + 4]
-	Write_register eax
-
-	mov eax, [ds:$FFFFC000 + 4 + ecx + 8]
-	Write_register eax
-
-	invoke IVideo.New_Line
-
-	add ecx, 12
-	cmp [ds:$FFFFC000 + 4 + ecx + 4], dword 0
-	jne .Loop
-	invoke IVideo.New_Line
-	ret
 
 Procedure_INT_13:
 	cli
 
-	invoke IVideo.Clear_Screen
+	invoke IVideo, IVideo.Clear_Screen
 
 	mov ecx, ebx
 	mov ebx, [fs:IInterrupt]

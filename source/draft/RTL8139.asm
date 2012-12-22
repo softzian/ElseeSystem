@@ -9,291 +9,225 @@
 ; along with this software.
 ; If not, see http://creativecommons.org/publicdomain/zero/1.0/
 
-include 'include\errcode.inc'
+include 'include\Header.inc'
 use32
 
-; Function 1: Transmit (AdapterId : Byte; var Payload : Array of Byte; Size : Word)
+; Function 1: Transmit (AdapterId : Cardinal; var Payload : Array of Byte; Size : Word)
 ; Function 2: Start_Receiver (AdapterId : Byte)
 ; Function 3: Stop_Receiver (AdapterId : Byte)
 ; Function 4: Set_Receive_Buffer (AdapterId : Byte; var Buffer : Array of Byte)
 
-jmp Function_Init
-repeat 5-($-$$)
-	db 0
-end repeat
+dd Function_Init
+dd Interface
 
-DriverId dd $10EC8139
+;DriverId dd $10EC8139
 Interface:
 	dd Function_Transmit
-	dd Function_Start_Receiver
-	dd Function_Stop_Receiver
 
+Adapter_desc = 8
+Adapter_port = 0
+Adapter_rbuff = 4
+Adapter_tbuff = 12
+
+Var:
+	.Adapter_table dd 0
 
 Function_Init:
 	push ebx
+	push ecx
+	push edx
+	push esi
 	push edi
 
 	mov ebx, eax
-	mov edi, IEthernet
-	mov [edi], eax
-	lea eax, [ebx+Function_Allocate_SubInterface]
-	mov [edi+4], eax
-	lea eax, [ebx+Function_Add_Adapter]
-	mov [edi+8], eax
-	lea eax, [ebx+Function_Transmit]
-	mov [edi+12], eax
-	lea eax, [ebx+Function_Start_Receiver]
-	mov [edi+16], eax
-	lea eax, [ebx+Function_Stop_Receiver]
-	mov [edi+20], eax
-	lea eax, [ebx+Function_Set_Receive_Buffer]
-	mov [edi+24], eax
-
+	add [fs:eax + 4], eax
+	lea esi, [eax + Interface]
 	xor eax, eax
-	pop edi
-	pop ebx
-	ret
 
-Function_Allocate_SubInterface: ; Function 1
-	.InterfaceId equ word [ebp+16]	; InterfaceId : Word
-	.Interface equ dword [ebp+12]	; var Interface : SubInterface_Type
-	.InterfaceIdx equ dword [ebp+8] ; var InterfaceIdx : Byte
-
-	push ebp
-	mov ebp, esp
-
-	push ebx
-	push ecx
-	push edx
-
-	mov ebx, [IEthernet]
-	add ebx, Var.SubInterfaceTable
-	xor edx, edx
-
-	xor ecx, ecx
-	mov ax, .InterfaceId
 	.Loop:
-		cmp ax, [ebx+ecx]
-		je .Error1	; Duplicate InterfaceId
-
-		test ax, ax
-		jnz .Next
-
-		test edx, edx
-		jnz .Next
-
-		lea edx, [ecx+SizeOf_SubInterface]
-
-		.Next:
-		add ecx, SizeOf_SubInterface
-		cmp ecx, SizeOf_SubInterface*NumOf_SubInterfaces
+		add [fs:esi + eax], ebx
+		add eax, 4
+		cmp eax, 4 * 4
 		jb .Loop
 
-	lea ebx, [ebx+edx-SizeOf_SubInterface]
-	mov [ebx], ax
-	mov eax, .Interface
-	mov [eax], ebx
-	mov eax, .InterfaceIdx
-	mov [eax], dl
-	xor eax, eax
+	; Create adapter table
+	mov [gs:ebp], dword 32
+	mov [gs:ebp + 4], dword 4
+	invoke IData.Create_table
 
-	.Return:
+	test eax, eax
+	; Error handling here
+
+	mov esi, [ss:_Result]
+	mov [fs:ebx + Var.Adapter_table], esi
+
+	mov [gs:ebp], esi
+	invoke IData.Add_table_entry
+
+	mov edi, [ss:_Result]
+
+	push ebx
+	call Search_RTL8139
+	call PCI_Config_RTL8139
+	call Start_RTL8139
+	pop ebx
+
+	mov [gs:ebp], esi
+	mov [gs:ebp + 4], edi
+	invoke IData.Modify_table_entry
+
+	mov edx, [ss:_Result]
+	mov [ds:edx + Adapter_port], dword RTL_Port
+
+	; Allocate receive buffer
+	mov [gs:ebp], dword $3000
+	mov [gs:ebp + 4], dword 3
+	invoke ISystem.Allocate_Code
+	mov eax, [ss:_Result]
+
+	mov [ds:edx + Adapter_rbuff], eax
+	mov [ds:edx + Adapter_desc], dword 0
+
+	; Allocate transmit buffer
+	mov [gs:ebp], dword $1000
+	mov [gs:ebp + 4], dword 3
+	invoke ISystem.Allocate_Code
+	mov eax, [ss:_Result]
+
+	mov [ds:edx + Adapter_tbuff], eax
+
+	mov [gs:ebp], esi
+	mov [gs:ebp + 4], edi
+	invoke IData.Finish_modify_table_entry
+
+	mov [gs:ebp], ebx
+	mov [gs:ebp + 4], edi
+	invoke INetwork.Add_adapter
+
+	pop edi
+	pop esi
 	pop edx
 	pop ecx
 	pop ebx
-	leave
-	ret (2 + 4 + 4)
-	.Error1:
-	mov eax, DUPLICATE_INTERFACE
-	jmp .Return
-
-	restore .InterfaceId
-	restore .Interface
-	restore .InterfaceIdx
-
-Function_Add_Adapter:	; Function 2
-	.InterfaceIdx equ byte [ebp+12] ; InterfaceIdx : Byte
-	.AdapterId equ dword [ebp+8]	; var AdapterId : Byte
-
-	push ebp
-	mov ebp, esp
-
-	push ebx
-
-	mov ebx, [IEthernet]
-	add ebx, Var.AdapterList
-	xor eax, eax
-
-	.Loop:
-		cmp [ebx+eax], byte 0
-		je .Found
-		inc al
-		cmp al, NumOf_Adapters
-		je .Error1
-		jmp .Loop
-
-	.Found:
-	add ebx, eax
-	mov ah, .InterfaceIdx
-	mov [ebx], ah
-	mov ebx, .AdapterId
-	inc al
-	mov [ebx], al
-	xor eax, eax
-
-	.Return:
-	pop ebx
-	leave
-	ret (1 + 4)
-	.Error1:
-	mov eax, ADAPTER_TABLE_IS_FULL
-	jmp .Return
-
-	restore .InterfaceIdx
-	restore .AdapterId
+	ret
 
 Function_Transmit:	; Function 3
-	.AdapterId equ byte [ebp+14]	; AdapterId : Byte
-	.Payload equ dword [ebp+10]	; var Payload : Array of Byte
-	.Size equ word [ebp+8]		; Size : Word
+	.Dest_lo4 equ dword [gs:ebp - 22] ; Dest : MAC_address
+	.Dest_hi2 equ word [gs:ebp - 18]
+	.Payload equ dword [gs:ebp - 16] ; var Payload : Array of Byte
+	.Size equ word [gs:ebp - 12] ; Size : Word
+	.Protocol equ word [gs:ebp - 10] ; Protocol : Word
+	.Driver equ dword [gs:ebp - 8] ; Driver : Address
+	.AdapterId equ dword [gs:ebp - 4] ; AdapterId : Cardinal
 
 	push ebp
-	mov ebp, esp
-
+	add ebp, 22
 	push ebx
-	mov ebx, [IEthernet]
-	xor eax, eax
-	mov al, .AdapterId
-	mov al, [ebx+Var.AdapterList+eax-1]
+	push ecx
+	push edx
+	push esi
+	push edi
 
-	test al, al
-	je .Error1
+	mov ebx, .Driver
+	mov esi, [fs:ebx + Var.Adapter_table]
 
-	mov bl, SizeOf_SubInterface
-	mul bl
-	mov ebx, [IEthernet]
-	mov eax, dword [ebx + Var.SubInterfaceTable + eax - SizeOf_SubInterface + SizeOf_InterfaceId + Sub_Transmit]
+	mov [gs:ebp], esi
+	mov eax, .AdapterId
+	mov [gs:ebp + 4], eax
+	invoke IData.Modify_table_entry
+
+	mov edi, [ss:_Result]
+
+	; TSAD
+	mov edx, [ds:edi + Adapter_port]
+	mov eax, [ds:edi + Adapter_desc]
+	shl al, 2
+	add al, $20
+	add edx, eax
+	Write_register edx
+	mov eax, [ds:edi + Adapter_tbuff]
+	out dx, eax
+
+	; Dest MAC addr
+	mov ebx, eax
+	Write_register ebx
+	mov eax, .Dest_lo4
+	mov [fs:ebx], eax
+	mov ax, .Dest_hi2
+	mov [fs:ebx + 4], ax
+
+	; Src MAC addr
+	push edx
+	mov edx, [ds:edi + Adapter_port]
+	in eax, dx
+	mov [fs:ebx + 6], eax
+	add edx, 2
+	in eax, dx
+	mov [fs:ebx + 8], eax
+	pop edx
+
+	; Ethertype
+	mov ax, .Protocol
+	mov [fs:ebx + 12], ax
+
+	xor ecx, ecx
+	.Loop:
+		mov al, [fs:ebx + ecx]
+		Write_reg_byte al
+		inc ecx
+		cmp ecx, 14
+		jb .Loop
+
+	mov eax, .Payload
+	mov [gs:ebp], eax
+	add ebx, 14
+	mov [gs:ebp + 4], ebx
+	movzx ecx, .Size
+	mov [gs:ebp + 8], ecx
+	invoke ISystem.Copy_data_to_code
+
+	; TDS
+	mov eax, ecx
+	sub edx, $10
+	add eax, 14
+	cmp eax, 60
+	jae .j1
+	mov eax, 60
+	.j1:
+	btr eax, 13
+	bts eax, 16
+	out dx, eax
+
+	mov eax, [ds:edi + Adapter_desc]
+	inc al
+	cmp al, 4
+	jb .j2
+	xor al, al
+	.j2: mov [ds:edi + Adapter_desc], eax
+
+	mov [gs:ebp], esi
+	mov eax, .AdapterId
+	mov [gs:ebp + 4], eax
+	invoke IData.Finish_modify_table_entry
+
+	.Return:
+	pop edi
+	pop esi
+	pop edx
+	pop ecx
 	pop ebx
+	pop ebp
+	ret
 
-	jmp dword [eax]
-
-	.Error1:
-	pop ebx
-	mov eax, INTERFACE_UNAVAILABLE
-	leave
-	ret (1 + 4 + 2)
-
-	restore .AdapterId
+	restore .Dest_lo4
+	restore .Dest_hi2
 	restore .Payload
 	restore .Size
-
-Function_Start_Receiver:	; Function 4
-	.AdapterId equ byte [ebp+8]	; AdapterId : Byte
-
-	push ebp
-	mov ebp, esp
-
-	push ebx
-	mov ebx, [IEthernet]
-	xor eax, eax
-	mov al, .AdapterId
-	mov al, [ebx+Var.AdapterList+eax-1]
-
-	test al, al
-	je .Error1
-
-	mov bl, SizeOf_SubInterface
-	mul bl
-	mov ebx, [IEthernet]
-	mov eax, dword [ebx + Var.SubInterfaceTable + eax - SizeOf_SubInterface + SizeOf_InterfaceId + Sub_Start_Receiver]
-	pop ebx
-
-	jmp dword [eax]
-
-	.Error1:
-	pop ebx
-	mov eax, INTERFACE_UNAVAILABLE
-	leave
-	ret 1
-
+	restore .Protocol
 	restore .AdapterId
-
-Function_Stop_Receiver: ; Function 5
-	.AdapterId equ byte [ebp+8]	; AdapterId : Byte
-
-	push ebp
-	mov ebp, esp
-
-	push ebx
-	mov ebx, [IEthernet]
-	xor eax, eax
-	mov al, .AdapterId
-	mov al, [ebx+Var.AdapterList+eax-1]
-
-	test al, al
-	je .Error1
-
-	mov bl, SizeOf_SubInterface
-	mul bl
-	mov ebx, [IEthernet]
-	mov eax, dword [ebx + Var.SubInterfaceTable + eax - SizeOf_SubInterface + SizeOf_InterfaceId + Sub_Stop_Receiver]
-	pop ebx
-
-	jmp dword [eax]
-
-	.Error1:
-	pop ebx
-	mov eax, INTERFACE_UNAVAILABLE
-	leave
-	ret 1
-
-	restore .AdapterId
-
-Function_Set_Receive_Buffer:
-	.AdapterId equ byte [ebp+12]	; AdapterId : Byte
-	.Buffer equ dword [ebp+8]	; var Buffer : Array of Byte
-
-	push ebp
-	mov ebp, esp
-
-	push ebx
-	mov ebx, [IEthernet]
-	xor eax, eax
-	mov al, .AdapterId
-	mov al, [ebx+Var.AdapterList+eax-1]
-
-	test al, al
-	je .Error1
-
-	mov bl, SizeOf_SubInterface
-	mul bl
-	mov ebx, [IEthernet]
-	mov eax, dword [ebx + Var.SubInterfaceTable + eax - SizeOf_SubInterface + SizeOf_InterfaceId + Sub_Set_Receive_Buffer]
-	pop ebx
-
-	jmp dword [eax]
-
-	.Error1:
-	pop ebx
-	mov eax, INTERFACE_UNAVAILABLE
-	leave
-	ret (1 + 4)
-
-	restore .AdapterId
-	restore .Buffer
-
-Var:
-	.SubInterfaceTable db (SizeOf_SubInterface * NumOf_SubInterfaces) dup 0
-	.AdapterList db 255 dup 0
+	restore .Driver
 
 RTL_Port = $4000
-
-Var32:
-	.Text db 20,0,'Packet transmitted! '
-	.Text3 db 17,0,'Packet received! '
-	.Text2 db 5,0,'Done!'
-	.Count db 36
-	.Port dw RTL_Port + $20
 
 macro Choose_PCI_Reg
 {
@@ -321,8 +255,8 @@ Search_RTL8139:
 	je .Found
 
 	add ecx, $800
-	cmp ecx, $80FFF800+$800
-	je .Return
+	cmp ecx, $80FFF800 + $800
+	je .Not_found
 	jmp .Loop
 
 	.Found:
@@ -330,31 +264,35 @@ Search_RTL8139:
 	.Return:
 	ret
 
+	.Not_found:
+	cli
+	hlt
+
 PCI_Config_RTL8139:
 	; IOAR
-	lea eax, [ecx+4*4]
+	lea eax, [ecx + 4 * 4]
 	Choose_PCI_Reg
 	Read_PCI_Reg
-	mov eax, $4001
+	mov eax, RTL_Port + 1
 	Write_PCI_Reg
 
 	; BMAR
-	lea eax, [ecx+$C*4]
+	lea eax, [ecx + $C * 4]
 	Choose_PCI_Reg
 	Read_PCI_Reg
 	xor eax, eax
 	Write_PCI_Reg
 
 	; PCI Command
-	lea eax, [ecx+1*4]
+	lea eax, [ecx + 1 * 4]
 	Choose_PCI_Reg
 	mov dx, $CFC
 	in ax, dx
 	or al, 101b
 	out dx, ax
 
-	; IRL
-	lea eax, [ecx+$F*4]
+	; ILR
+	lea eax, [ecx + $F * 4]
 	Choose_PCI_Reg
 	Read_PCI_Reg
 
@@ -398,38 +336,29 @@ Start_RTL8139:
 	mov ax, $FFFF
 	out dx, ax
 
-	mov [esp-1], byte $25
-	dec esp
-	push Function_RTL8139_ISR
-	call dword [IInterrupt.Install_ISR]
+	mov [gs:ebp], byte $2B
+	mov eax, [ss:_ModuleIdx]
+	add eax, Function_RTL8139_ISR
+	mov [gs:ebp + 1], eax
+	invoke IInterrupt.Install_ISR
 
-	mov [esp-1], byte 5
-	dec esp
-	call dword [IInterrupt.Enable_IRQ]
+	mov [gs:ebp], byte $B
+	invoke IInterrupt.Enable_IRQ
 
 	; Command
 	mov dx, RTL_Port + $37
-	mov al, 1100b
+	mov al, 100b
 	out dx, al
 	in al, dx
 
-	; Allocate
-	sub esp, 4
-	lea eax, [esp]
-	push eax
-	push $0
-	push (8192 + 16)
-	call dword [IMemory.Allocate]
-	pop eax
-
 	; RBSTART
-	mov dx, RTL_Port + $30
-	out dx, eax
+	;mov dx, RTL_Port + $30
+	;out dx, eax
 
 	; RCR
-	mov dx, RTL_Port + $44
-	mov eax, $F
-	out dx, eax
+	;mov dx, RTL_Port + $44
+	;mov eax, $F
+	;out dx, eax
 
 	ret
 
@@ -439,63 +368,24 @@ Function_RTL8139_ISR:
 	xor eax, eax
 	mov dx, RTL_Port + $3E
 	in ax, dx
-	call Write_EAX
+	Write_register eax
 	out dx, ax
 
-	call dword [IVideo.New_Line]
-
-	call dword [IInterrupt.Send_EOI]
+	invoke IInterrupt.Send_EOI
 	popa
 	iret
-
-Procedure_Timer_ISR:
-	pusha
-
-	dec byte [Var32.Count]
-	cmp byte [Var32.Count], 0
-	jne .Return
-
-	mov [Var32.Count], byte 36
-
-	;cmp [Var32.Port], word (RTL_Port + $30)
-	;jb .j1
-	;mov [Var32.Port], word (RTL_Port + $20)
-	;.j1:
-
-	; Transmit descriptor
-	;mov dx, [Var32.Port]
-	;mov eax, Ethernet_Frame
-	;out dx, eax
-
-	; TDS
-	;sub dl, $10
-	;mov eax, $0038203C
-	;out dx, eax
-
-	;add [Var32.Port], word 4
-
-	.Return:
-	call dword [IInterrupt.Send_EOI]
-	popa
-	iret
-
-Write_EAX:
-	push eax
-	push eax
-	call dword [IUtility.Write_Cardinal_Hex]
-	mov [esp-1], byte ' '
-	dec esp
-	call dword [IUtility.Write_Char]
-	pop eax
-	ret
 
 Calculate_IP_Checksum:
+	push eax
+	push ecx
+	push edx
+
 	xor eax, eax
 	xor ecx, ecx
 	.Loop1:
-	mov bx, [IP_Datagram+ecx*2]
-	xchg bl, bh
-	add ax, bx
+	mov dx, [fs:ebx + ecx * 2]
+	xchg dl, dh
+	add ax, dx
 	adc ax, 0
 	inc ecx
 	cmp ecx, 10
@@ -503,23 +393,27 @@ Calculate_IP_Checksum:
 
 	xchg al, ah
 	not ax
-	mov [IP_Datagram.Header_Checksum], ax
+	mov [fs:ebx + 12], ax
 
 	xor eax, eax
 	mov ecx, 7
 	.Loop2:
-	mov bx, [ICMP_Load+ecx*2]
-	xchg bl, bh
-	add ax, bx
+	mov dx, [fs:ebx + 20 + ecx * 2]
+	xchg dl, dh
+	add ax, dx
 	adc ax, 0
 	loop .Loop2
-	mov bx, [ICMP_Load]
-	xchg bl, bh
-	add ax, bx
+	mov dx, [fs:ebx + 20]
+	xchg dl, dh
+	add ax, dx
 	adc ax, 0
 	xchg al, ah
 	not ax
-	mov [ICMP_Load.Checksum], ax
+	mov [fs:ebx + 20 + 2], ax
+
+	pop edx
+	pop ecx
+	pop eax
 
 	ret
 
@@ -547,3 +441,52 @@ ICMP_Load:
 	.Data db 'PingPong'
 Pad:
 	db 10 dup 0
+
+Function_Cardinal_to_HexStr_32:
+	.Num equ dword [gs:ebp - 8]
+	.HexStr equ dword [gs:ebp - 4]
+
+	push ebp
+	add ebp, 8
+	push ebx
+	push ecx
+	push edx
+	push edi
+
+	mov edx, .Num
+	xor ebx, ebx
+	mov edi, .HexStr
+
+	mov cl, 7
+	.Loop:
+	mov eax, edx
+	shl cl, 2
+	shr eax, cl
+	shr cl, 2
+	and al, $F
+
+	cmp al, $A
+	jae .j1
+	add al, '0' - 0
+	jmp .j2
+	.j1: add al, 'A' - $A
+	.j2: inc ebx
+
+	mov [ds:edi + ebx - 1], al
+
+	.Continue_loop:
+	dec cl
+	jns .Loop
+
+	.Return:
+	xor eax, eax
+	pop edi
+	pop edx
+	pop ecx
+	pop ebx
+
+	pop ebp
+	ret
+
+	restore .Num
+	restore .HexStr
