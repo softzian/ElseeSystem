@@ -67,17 +67,17 @@ PXE_Loader:
 	;test ax, ax
 	;jnz Abort
 
-	push Var.Handle_Module
-	push dword $18000
-	call Function_Download_File
-	test ax, ax
-	jnz Abort
+	;push Var.Handle_Module
+	;push dword $18000
+	;call Function_Download_File
+	;test ax, ax
+	;jnz Abort
 
-	push Var.Editor_Module
-	push dword $19000
-	call Function_Download_File
-	test ax, ax
-	jnz Abort
+	;push Var.Editor_Module
+	;push dword $19000
+	;call Function_Download_File
+	;test ax, ax
+	;jnz Abort
 
 	push Var.Data_Module
 	push dword $30000
@@ -200,8 +200,8 @@ GDT:
 		db 11001111b
 		db 0
 	.gdt_data:	; 3 - DS
-		dw $01FF
-		dw 0
+		dw $1
+		dw $4000
 		db $20
 		db 10010010b
 		db 11000000b
@@ -220,7 +220,27 @@ GDT:
 		db 10010010b
 		db 11000000b
 		db 0
-
+	.gdt_data2:	 ; 6 - ES
+		dw $1
+		dw $4000
+		db $20
+		db 10010010b
+		db 11000000b
+		db 0
+	.gdt_data3:	 ; 7 - DS2
+		dw $0000
+		dw $F000
+		db $0
+		db 10010010b
+		db 11000000b
+		db 0
+	.gdt_stack3:	; 8 - GS2
+		dw 0
+		dw $E000
+		db 0
+		db 10010010b
+		db 11000000b
+		db 0
 GDT_end:
 GDT_Desc:
 	dw GDT_end - GDT
@@ -256,8 +276,19 @@ Begin:
 	jmp Halt32
 
 Main_thread:
-	mov [fs:$B8000], byte 'b'
-	mov [fs:$B8001], byte 1100b
+	mov [gs:ebp], dword $300000
+	mov [gs:ebp + 4], dword 0
+	invoke ISystem, ISystem.Add_address_space
+
+	mov ecx, $7000
+	xor edx, edx
+	invoke ISystem, ISystem.Set_address_space
+
+	mov [ds:0], dword $19932012
+	mov eax, [fs:$300000]
+	Write_register eax
+	cli
+
 ;        mov [gs:ebp], dword Packet
 ;        mov [gs:ebp + 4], dword $FFFF1000
 ;        mov [gs:ebp + 8], dword 11

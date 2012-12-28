@@ -17,20 +17,21 @@ use32
 ; Function 3: Stop_Receiver (AdapterId : Byte)
 ; Function 4: Set_Receive_Buffer (AdapterId : Byte; var Buffer : Array of Byte)
 
-dd Function_Init
-dd Interface
-
-;DriverId dd $10EC8139
+jmp near dword Function_Init
+dd Header
 Interface:
 	dd Function_Transmit
-
-Adapter_desc = 8
-Adapter_port = 0
-Adapter_rbuff = 4
-Adapter_tbuff = 12
+Header:
+	.Driver_id dd $10EC8139
+	dd $1
+	dq $0
 
 Var:
-	.Adapter_table dd 0
+	.Data_space dd 0
+	.Adapter_desc dd 0
+	.Adapter_port dd 0
+	.Adapter_rbuff dd 0
+	.Adapter_tbuff dd 0
 
 Function_Init:
 	push ebx
@@ -40,31 +41,39 @@ Function_Init:
 	push edi
 
 	mov ebx, eax
-	add [fs:eax + 4], eax
 	lea esi, [eax + Interface]
-	xor eax, eax
 
+	xor eax, eax
 	.Loop:
 		add [fs:esi + eax], ebx
 		add eax, 4
-		cmp eax, 4 * 4
+		cmp eax, 4 * 1
 		jb .Loop
 
-	; Create adapter table
-	mov [gs:ebp], dword 32
-	mov [gs:ebp + 4], dword 4
-	invoke IData.Create_table
+	mov [fs:ebx + Get_module_address.Imm], ebx
+
+	; Register module
+	mov [gs:ebp], dword $10EC8139
+	mov [gs:ebp + 4], dword 1
+	mov [gs:ebp + 8], dword 0
+	mov [gs:ebp + 12], dword 0
+	mov [gs:ebp + 16], ebx
+	invoke ISystem, ISystem.Register_Module
+
+	; Allocate address space
+	mov [gs:ebp], dword $4000
+	invoke ISystem, ISystem.Allocate
+
+	mov esi, [ss:_Result]
+
+	mov [gs:ebp], esi
+	mov [gs:ebp + 4], dword 0
+	invoke ISystem, ISystem.Add_address_space
 
 	test eax, eax
 	; Error handling here
 
-	mov esi, [ss:_Result]
-	mov [fs:ebx + Var.Adapter_table], esi
-
-	mov [gs:ebp], esi
-	invoke IData.Add_table_entry
-
-	mov edi, [ss:_Result]
+	mov [fs:ebx + Var.Data_space], esi
 
 	push ebx
 	call Search_RTL8139
@@ -72,37 +81,20 @@ Function_Init:
 	call Start_RTL8139
 	pop ebx
 
-	mov [gs:ebp], esi
-	mov [gs:ebp + 4], edi
-	invoke IData.Modify_table_entry
+	mov [fs:ebx + Var.Adapter_port], dword RTL_Port
 
-	mov edx, [ss:_Result]
-	mov [ds:edx + Adapter_port], dword RTL_Port
-
-	; Allocate receive buffer
-	mov [gs:ebp], dword $3000
-	mov [gs:ebp + 4], dword 3
-	invoke ISystem.Allocate_Code
-	mov eax, [ss:_Result]
-
-	mov [ds:edx + Adapter_rbuff], eax
-	mov [ds:edx + Adapter_desc], dword 0
-
-	; Allocate transmit buffer
-	mov [gs:ebp], dword $1000
-	mov [gs:ebp + 4], dword 3
-	invoke ISystem.Allocate_Code
-	mov eax, [ss:_Result]
-
-	mov [ds:edx + Adapter_tbuff], eax
-
-	mov [gs:ebp], esi
-	mov [gs:ebp + 4], edi
-	invoke IData.Finish_modify_table_entry
+	mov [fs:ebx + Var.Adapter_rbuff], esi
+	mov [fs:ebx + Var.Adapter_desc], dword 0
+	add esi, $3000
+	mov [fs:ebx + Var.Adapter_tbuff], esi
 
 	mov [gs:ebp], ebx
-	mov [gs:ebp + 4], edi
-	invoke INetwork.Add_adapter
+	mov [gs:ebp + 4], dword 1
+	invoke INetwork, INetwork.Add_adapter
+
+	Write_register eax
+	cli
+	hlt
 
 	pop edi
 	pop esi
@@ -111,83 +103,75 @@ Function_Init:
 	pop ebx
 	ret
 
+Get_module_address:
+	db $B8
+	.Imm dd 0
+	ret
+
 Function_Transmit:	; Function 3
-	.Dest_lo4 equ dword [gs:ebp - 22] ; Dest : MAC_address
-	.Dest_hi2 equ word [gs:ebp - 18]
-	.Payload equ dword [gs:ebp - 16] ; var Payload : Array of Byte
-	.Size equ word [gs:ebp - 12] ; Size : Word
-	.Protocol equ word [gs:ebp - 10] ; Protocol : Word
-	.Driver equ dword [gs:ebp - 8] ; Driver : Address
+	.Dest_lo4 equ dword [gs:ebp - 18] ; Dest : MAC_address
+	.Dest_hi2 equ word [gs:ebp - 14]
+	.Payload equ dword [gs:ebp - 12] ; var Payload : Array of Byte
+	.Size equ word [gs:ebp - 8] ; Size : Word
+	.Protocol equ word [gs:ebp - 6] ; Protocol : Word
 	.AdapterId equ dword [gs:ebp - 4] ; AdapterId : Cardinal
 
-	push ebp
-	add ebp, 22
 	push ebx
 	push ecx
 	push edx
 	push esi
 	push edi
 
-	mov ebx, .Driver
-	mov esi, [fs:ebx + Var.Adapter_table]
+	call Get_module_address
+	mov ebx, eax
+	Write_register eax
+	cli
+	hlt
 
-	mov [gs:ebp], esi
-	mov eax, .AdapterId
-	mov [gs:ebp + 4], eax
-	invoke IData.Modify_table_entry
+	mov ecx, 1
+	invoke ISystem, ISystem.Get_address_space
+	push ecx
 
-	mov edi, [ss:_Result]
+	mov ecx, ebx
+	mov edx, 1
+	invoke ISystem, ISystem.Set_address_space
 
 	; TSAD
-	mov edx, [ds:edi + Adapter_port]
-	mov eax, [ds:edi + Adapter_desc]
+	mov edx, [fs:ebx + Var.Adapter_port]
+	mov eax, [fs:ebx + Var.Adapter_desc]
 	shl al, 2
 	add al, $20
 	add edx, eax
-	Write_register edx
-	mov eax, [ds:edi + Adapter_tbuff]
+	mov eax, [fs:ebx + Var.Adapter_tbuff]
 	out dx, eax
 
 	; Dest MAC addr
-	mov ebx, eax
-	Write_register ebx
 	mov eax, .Dest_lo4
-	mov [fs:ebx], eax
+	mov [es:$3000], eax
 	mov ax, .Dest_hi2
-	mov [fs:ebx + 4], ax
+	mov [es:$3004], ax
 
 	; Src MAC addr
 	push edx
-	mov edx, [ds:edi + Adapter_port]
+	mov edx, [fs:ebx + Var.Adapter_port]
 	in eax, dx
-	mov [fs:ebx + 6], eax
+	mov [es:$3006], eax
 	add edx, 2
 	in eax, dx
-	mov [fs:ebx + 8], eax
+	mov [es:$3008], eax
 	pop edx
 
 	; Ethertype
 	mov ax, .Protocol
-	mov [fs:ebx + 12], ax
+	mov [es:$300C], ax
 
-	xor ecx, ecx
-	.Loop:
-		mov al, [fs:ebx + ecx]
-		Write_reg_byte al
-		inc ecx
-		cmp ecx, 14
-		jb .Loop
-
-	mov eax, .Payload
-	mov [gs:ebp], eax
-	add ebx, 14
-	mov [gs:ebp + 4], ebx
 	movzx ecx, .Size
-	mov [gs:ebp + 8], ecx
-	invoke ISystem.Copy_data_to_code
+	mov esi, .Payload
+	mov edi, $300E
+	rep movsb
 
 	; TDS
-	mov eax, ecx
+	movzx eax, .Size
 	sub edx, $10
 	add eax, 14
 	cmp eax, 60
@@ -198,17 +182,16 @@ Function_Transmit:	; Function 3
 	bts eax, 16
 	out dx, eax
 
-	mov eax, [ds:edi + Adapter_desc]
+	mov eax, [fs:ebx + Var.Adapter_desc]
 	inc al
 	cmp al, 4
 	jb .j2
 	xor al, al
-	.j2: mov [ds:edi + Adapter_desc], eax
+	.j2: mov [fs:ebx + Var.Adapter_desc], eax
 
-	mov [gs:ebp], esi
-	mov eax, .AdapterId
-	mov [gs:ebp + 4], eax
-	invoke IData.Finish_modify_table_entry
+	pop ecx
+	mov edx, 1
+	invoke ISystem, ISystem.Set_address_space
 
 	.Return:
 	pop edi
@@ -216,7 +199,6 @@ Function_Transmit:	; Function 3
 	pop edx
 	pop ecx
 	pop ebx
-	pop ebp
 	ret
 
 	restore .Dest_lo4
@@ -340,10 +322,10 @@ Start_RTL8139:
 	mov eax, [ss:_ModuleIdx]
 	add eax, Function_RTL8139_ISR
 	mov [gs:ebp + 1], eax
-	invoke IInterrupt.Install_ISR
+	invoke IInterrupt, IInterrupt.Install_ISR
 
 	mov [gs:ebp], byte $B
-	invoke IInterrupt.Enable_IRQ
+	invoke IInterrupt, IInterrupt.Enable_IRQ
 
 	; Command
 	mov dx, RTL_Port + $37
@@ -364,14 +346,20 @@ Start_RTL8139:
 
 Function_RTL8139_ISR:
 	pusha
+	push gs
+
+	mov ax, 8 * 8
+	mov gs, ax
+	mov ebp, 16
 
 	xor eax, eax
 	mov dx, RTL_Port + $3E
 	in ax, dx
-	Write_register eax
 	out dx, ax
 
-	invoke IInterrupt.Send_EOI
+	invoke IInterrupt, IInterrupt.Send_EOI
+
+	pop gs
 	popa
 	iret
 
@@ -441,52 +429,3 @@ ICMP_Load:
 	.Data db 'PingPong'
 Pad:
 	db 10 dup 0
-
-Function_Cardinal_to_HexStr_32:
-	.Num equ dword [gs:ebp - 8]
-	.HexStr equ dword [gs:ebp - 4]
-
-	push ebp
-	add ebp, 8
-	push ebx
-	push ecx
-	push edx
-	push edi
-
-	mov edx, .Num
-	xor ebx, ebx
-	mov edi, .HexStr
-
-	mov cl, 7
-	.Loop:
-	mov eax, edx
-	shl cl, 2
-	shr eax, cl
-	shr cl, 2
-	and al, $F
-
-	cmp al, $A
-	jae .j1
-	add al, '0' - 0
-	jmp .j2
-	.j1: add al, 'A' - $A
-	.j2: inc ebx
-
-	mov [ds:edi + ebx - 1], al
-
-	.Continue_loop:
-	dec cl
-	jns .Loop
-
-	.Return:
-	xor eax, eax
-	pop edi
-	pop edx
-	pop ecx
-	pop ebx
-
-	pop ebp
-	ret
-
-	restore .Num
-	restore .HexStr

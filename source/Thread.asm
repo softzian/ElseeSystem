@@ -16,13 +16,15 @@ use32
 
 ; Type declaration
 ;       ThreadEntry_Type = Record
-;               DS_entry : GDT_entry
+;               DS_space : Address_space_index
+;               ES_space : Address_space_index
 ;               SS_entry : GDT_entry
 ;               GS_entry : GDT_entry
 ;               ESP : Address
 ;               State : Cardinal
 ;               Next_thread : Thread_idx
 ;               Previous_thread : Thread_idx
+;               Flag : Card32
 ;       End
 
 IThread = $100008
@@ -31,37 +33,41 @@ IThread = $100008
 ; Function 3: Yield
 ; Function 4: Block_self
 ; Function 5: Block (ThreadIdx : Thread_handle_type)
-; Function 6: Get_Active_Thread : Thread_handle_type
 
 Const:
 	SizeOf_Thread_entry = 64
 	NumOf_Thread_entries = 64
 	SizeOf_Thread_table = SizeOf_Thread_entry * NumOf_Thread_entries
 
-	DS_entry = 0
+	DS_space = 0
+	ES_space = 4
 	SS_entry = 8
 	GS_entry = 16
 	_ESP = 24
 	State = 28
 	Next_thread = 32
 	Previous_thread = 36
+	Flag = 40
 
 	Free = 0
 	Running = 1
 	Stop = 2
-	Kill = 3
+	Blocked = 3
+	Kill = 4
 
 Error_Code:
 	ZERO_MODULE_INDEX = -1
 	CAN_NOT_CREATE_STACK = -2
+	NOT_EXISTED_ADDRESS_SPACE = -3
 
-dd Function_Init
+jmp near dword Function_Init
 dd Header
 Interface:
 	dd Function_New_Thread
 	dd Function_Start
 	dd Function_Yield
-;        dd Function_Block_self
+	dd Function_Block_self
+	dd 0
 Header:
 
 Function_Init:
@@ -77,7 +83,7 @@ Function_Init:
 	.Loop:
 		add [fs:esi + eax], ebx
 		add eax, 4
-		cmp eax, 4 * 3
+		cmp eax, 4 * 6
 		jb .Loop
 
 	cli
@@ -88,11 +94,27 @@ Function_Init:
 	mov [gs:ebp + 1], eax
 	invoke IInterrupt, IInterrupt.Install_ISR
 
+	mov [gs:ebp], dword 5
+	mov [gs:ebp + 4], dword 0
+	mov [gs:ebp + 8], dword 0
+	mov [gs:ebp + 12], dword 0
+	mov [gs:ebp + 16], dword ebx
+	invoke ISystem, ISystem.Register_Module
+
 	sti
 
 	pop esi
 	pop edi
 	pop ebx
+	ret
+
+Lock_Thread_module:
+	mov ebx, [fs:IThread]
+	; Get lock 0
+	.Spinlock:
+		pause
+		lock bts dword [fs:ebx + Var.Lock], 0
+		jc .Spinlock
 	ret
 
 Function_New_Thread:	 ; Function 1
@@ -113,8 +135,8 @@ Function_New_Thread:	 ; Function 1
 	; test eax, eax
 	; jnz WTF_ModuleIdx_is_invalid !? Who touch the SS critical data?
 
-	mov edi, ebx
-	test edi, edi
+	mov edi, ecx
+	test ecx, ecx
 	jnz .Find_free_entry
 
 	; This module doesn't have thread table, create one for it
@@ -125,7 +147,6 @@ Function_New_Thread:	 ; Function 1
 	jnz .Error1	; Damn, run out of memory
 
 	mov edi, [ss:_Result]
-	mov esi, edi
 	mov ecx, [ss:_ModuleIdx]
 	invoke ISystem, ISystem.Set_module_thread_table
 
@@ -142,7 +163,7 @@ Function_New_Thread:	 ; Function 1
 	.Loop:
 		cmp [fs:edi + ecx + State], dword Free
 		je .Found
-		add ecx, 32
+		add ecx, 64
 		cmp ecx, SizeOf_Thread_table
 		jb .Loop
 		jmp .Error2	; Thread Table is full
@@ -152,12 +173,17 @@ Function_New_Thread:	 ; Function 1
 	add edi, ecx
 
 	mov [gs:ebp], dword $1000	; Size
-	invoke ISystem, ISystem.Allocate    ; Allocate the first stack
-
+	invoke ISystem, ISystem.Allocate    ; Allocate the GS stack
 	test eax, eax
 	jnz .Error3	; Can not allocate stack
+	push dword [ss:_Result]
 
-	; Create GDT entry for the first stack
+	mov [gs:ebp], dword $1000
+	invoke ISystem, ISystem.Allocate    ; Allocate the SS stack
+	test eax, eax
+	jnz .Error4	; Can not allocate stack
+
+	; Create GDT entry for the SS stack
 	mov ebx, [ss:_Result]
 	add ebx, $1000
 	mov eax, ebx
@@ -165,13 +191,15 @@ Function_New_Thread:	 ; Function 1
 	shr eax, 16
 	mov [fs:edi + SS_entry + 4], al
 	mov [fs:edi + SS_entry + 7], ah
-	mov [fs:edi + SS_entry], word 1
+	mov [fs:edi + SS_entry], word 0
 	mov [fs:edi + SS_entry + 5], word 1100000010010110b
 
 	; Init data on the first stack
 	mov eax, [ss:_ModuleIdx]
 	mov [fs:ebx - $14], eax
-	mov [fs:ebx - $18], ecx ; ThreadIdx
+	shr ecx, 6
+	add eax, ecx
+	mov [fs:ebx - $18], eax ; ThreadIdx
 	mov [fs:ebx - $1C], ebx ; Stack base
 
 	mov eax, .StartPoint
@@ -189,37 +217,28 @@ Function_New_Thread:	 ; Function 1
 	mov [fs:ebx - $40], eax
 	mov [fs:ebx - $44], eax
 
-	mov [gs:ebp], dword $1000	; Size
-	invoke ISystem, ISystem.Allocate    ; Allocate the second stack
-
-	test eax, eax
-	jnz .Error4	; Can not allocate stack
-
-	mov esi, [ss:_Result]
-
-	; Create LDT entry for the second stack
-	mov eax, esi
+	; Create GDT entry for the GS stack
+	pop eax
 	mov [fs:edi + GS_entry + 2], ax
 	shr eax, 16
 	mov [fs:edi + GS_entry + 4], al
 	mov [fs:edi + GS_entry + 7], ah
-	mov [fs:edi + GS_entry], word 1
+	mov [fs:edi + GS_entry], word 0
 	mov [fs:edi + GS_entry + 5], word 1100000010010010b
 
 	mov [fs:edi + _ESP], dword ($FFFFFFFF - $44 + 1)
-	mov [fs:edi + State], dword Stop
+	mov [fs:edi + State], dword Blocked
+
+	; Set the address space
+	xor eax, eax
+	mov [fs:edi + DS_space], eax
+	mov [fs:edi + ES_space], eax
 
 	; Step 3 - Finish
-	mov ebx, [fs:IThread]
-	; Get lock 0
-	.Spinlock:
-		lock bts dword [fs:ebx + Var.Lock], 0
-		jnc .Continue
-		jmp .Spinlock
+	call Lock_Thread_module
 
-	.Continue:	; Insert thread to the round robin list
+	; Insert thread to the round robin list
 	mov edx, ecx
-	shr edx, 6
 	add edx, [ss:_ModuleIdx]
 	mov [ss:_Result], edx	       ; Return ThreadIdx
 
@@ -227,7 +246,7 @@ Function_New_Thread:	 ; Function 1
 	test ecx, ecx
 	jz .First_thread
 
-	mov [fs:edi + Next_thread], edx
+	mov [fs:edi + Next_thread], ecx
 
 	mov esi, ecx
 	and esi, $00000FFF
@@ -235,12 +254,11 @@ Function_New_Thread:	 ; Function 1
 	invoke ISystem, ISystem.Get_module_thread_table
 
 	shl esi, 6
-	add ebx, esi
-	shr esi, 6
+	add ecx, esi
 
-	mov esi, [fs:ebx + Previous_thread]
+	mov esi, [fs:ecx + Previous_thread]
 	mov [fs:edi + Previous_thread], esi
-	mov [fs:ebx + Previous_thread], edx
+	mov [fs:ecx + Previous_thread], edx
 
 	mov ecx, esi
 	and esi, $00000FFF
@@ -248,10 +266,9 @@ Function_New_Thread:	 ; Function 1
 	invoke ISystem, ISystem.Get_module_thread_table
 
 	shl esi, 6
-	add ebx, esi
-	shr esi, 6
+	add ecx, esi
 
-	mov [fs:ebx + Next_thread], edx
+	mov [fs:ecx + Next_thread], edx
 	jmp .Release_Lock
 
 	.First_thread:
@@ -260,7 +277,6 @@ Function_New_Thread:	 ; Function 1
 	mov [fs:edi + Previous_thread], edx
 
 	.Release_Lock:
-	mov ebx, [fs:IThread]
 	btr dword [fs:ebx + Var.Lock], 0
 
 	xor eax, eax
@@ -287,13 +303,13 @@ Function_New_Thread:	 ; Function 1
 	.Error4:
 
 	restore .StartPoint
-	restore .Temp_var
 
-Function_Start: 	; Function 2
-	.ThreadIdx equ dword [gs:ebp - 4]  ; ThreadIdx : Cardinal
+Set_thread_state:
+	.ThreadIdx equ dword [gs:ebp - 8]  ; ThreadIdx : Card32
+	.State equ dword [gs:ebp - 4] ; State : Card32
 
 	push ebp
-	add ebp, 4
+	add ebp, 8
 
 	push ebx
 	push ecx
@@ -307,19 +323,15 @@ Function_Start: 	; Function 2
 	and ecx, $FFFFF000
 	invoke ISystem, ISystem.Get_module_thread_table
 
-	mov ecx, ebx
 	and edx, $FFF
 	shl edx, 6
+	add edx, ecx
 
-	mov ebx, [fs:IThread]
-	; Get lock 0
-	.Spinlock:
-		lock bts dword [fs:ebx + Var.Lock], 0
-		jnc .Continue
-		jmp .Spinlock
+	call Lock_Thread_module
 
 	.Continue:
-	mov [fs:ecx + edx + State], dword Running
+	mov eax, .State
+	mov [fs:edx + State], eax
 
 	xor eax, eax
 
@@ -339,19 +351,23 @@ Function_Start: 	; Function 2
 	jmp .Return
 
 	restore .ThreadIdx
+	restore .State
+
+Function_Start: 	; Function 2
+	.ThreadIdx equ dword [gs:ebp - 4]  ; ThreadIdx : Cardinal
+
+	mov [gs:ebp + 4], dword Stop
+	jmp Set_thread_state
+
+	restore .ThreadIdx
 
 Function_Yield:        ; Function 3
 	push eax
 	push ebx
 	mov ebx, [fs:IThread]
 
-	; Get lock 0
-	.Spinlock:
-		lock bts dword [fs:ebx + Var.Lock], 0
-		jnc .Continue
-		jmp .Spinlock
+	call Lock_Thread_module
 
-	.Continue:
 	mov eax, [ss:esp + 8]
 	mov [fs:ebx + Var.EIP], eax
 
@@ -363,30 +379,11 @@ Function_Yield:        ; Function 3
 	pop eax
 	ret
 
-;Function_Block_self:    ; Function 4
-;        push ebx
-;        mov ebx, [fs:IThread]
-
-	; Get lock 0
-;        .Spinlock:
-;                lock bts dword [fs:ebx + Var.Lock], 0
-;                jnc .Continue
-;                jmp .Spinlock
-
-;        .Continue:
-;        mov ebx, [fs:ebx + Var.ThreadTable]
-;        mov eax, [ss:_ThreadIdx]
-;        mov [ds:ebx + eax * 8 + State], dword Stop
-
-;        .Release_Lock:
-;        mov ebx, [fs:IThread]
-;        lock btr dword [fs:ebx + Var.Lock], 0
-
-;        xor eax, eax
-
-;        .Return:
-;        pop ebx
-;        ret
+Function_Block_self:	; Function 4
+	mov eax, [ss:_ThreadIdx]
+	mov [gs:ebp], eax
+	mov [gs:ebp + 4], dword Blocked
+	jmp Set_thread_state
 
 Procedure_Switch_Context:
 	push 0
@@ -411,18 +408,18 @@ Procedure_Switch_Context:
 	and ecx, $FFFFF000
 	invoke ISystem, ISystem.Get_module_thread_table
 
-	mov esi, ebx
+	mov esi, ecx
 	and edx, $FFF
 	shl edx, 6
 	add esi, edx
 
 	mov [fs:esi + _ESP], esp
+	mov eax, [fs:$4000 + 24]
+	mov [fs:esi + DS_space], eax
+	mov eax, [fs:$4000 + 28]
+	mov [fs:esi + ES_space], eax
 
-	mov edx, 3
-	invoke ISystem, ISystem.Save_GDT_entry
-	mov [fs:esi + DS_entry + 4], ebx
-	mov [fs:esi + DS_entry], ecx
-
+	.Save_SS_and_GS:
 	mov edx, 4
 	invoke ISystem, ISystem.Save_GDT_entry
 	mov [fs:esi + SS_entry + 4], ebx
@@ -433,6 +430,8 @@ Procedure_Switch_Context:
 	mov [fs:esi + GS_entry + 4], ebx
 	mov [fs:esi + GS_entry], ecx
 
+	mov [fs:esi + State], dword Stop
+
 	mov edx, [fs:esi + Next_thread]
 
 	.Loop:
@@ -440,13 +439,13 @@ Procedure_Switch_Context:
 		and ecx, $FFFFF000
 		invoke ISystem, ISystem.Get_module_thread_table
 
-		mov esi, ebx
-		mov ebx, edx
-		and ebx, $FFF
-		shl ebx, 6
-		add esi, ebx
+		mov esi, ecx
+		mov ecx, edx
+		and ecx, $FFF
+		shl ecx, 6
+		add esi, ecx
 
-		cmp [fs:esi + State], dword Running
+		cmp [fs:esi + State], dword Stop
 		je .Found
 		mov edx, [fs:esi + Next_thread]
 		jmp .Loop
@@ -455,18 +454,15 @@ Procedure_Switch_Context:
 	mov ebx, [fs:IThread]
 	mov [fs:ebx + Var.Active_thread], edx
 
-	.Return:
-	mov edx, 3
-	mov ebx, [fs:esi + DS_entry + 4]
-	mov ecx, [fs:esi + DS_entry]
-	test ecx, ecx
-	jnz .Load_DS
-	test ebx, ebx
-	jz .Next
-	.Load_DS:
-	invoke ISystem, ISystem.Load_GDT_entry
+	mov ecx, [fs:esi + DS_space]
+	xor edx, edx
+	invoke ISystem, ISystem.Set_address_space
 
-	.Next:
+	mov ecx, [fs:esi + ES_space]
+	mov edx, 1
+	invoke ISystem, ISystem.Set_address_space
+
+	.Load_SS_and_GS:
 	mov edx, 4
 	mov ebx, [fs:esi + SS_entry + 4]
 	mov ecx, [fs:esi + SS_entry]
@@ -477,17 +473,16 @@ Procedure_Switch_Context:
 	mov ecx, [fs:esi + GS_entry]
 	invoke ISystem, ISystem.Load_GDT_entry
 
+	mov dx, $8 * 5
+	mov gs, dx
+	mov dx, $8 * 4
+	mov ss, dx
 	mov esp, [fs:esi + _ESP]
-	mov ebx, [fs:IThread]
 
-	mov cx, $8 * 3
-	mov ds, cx
-	add cl, $8 * 2
-	mov gs, cx
-	sub cl, $8
-	mov ss, cx
+	mov [fs:esi + State], dword Running
 
 	; Release lock
+	mov ebx, [fs:IThread]
 	btr dword [fs:ebx + Var.Lock], 0
 
 	pop edi

@@ -1,4 +1,4 @@
-; Ethernet.asm - Ethernet Interface Module
+; Network.asm - Network Interface Module
 ; Written in 2012 by Congdm
 ;
 ; To the extent possible under law, the author(s) have dedicated
@@ -24,12 +24,10 @@ INetwork = $100C00
 ; Function 8: Receive_packet (AdapterIdx : Byte; var Packet : Array of Byte)
 
 Const:
-	SizeOf_DriverId = 4
-	NumOf_Drivers = 16
-	NumOf_Adapters = 255
+	NumOf_Adapters = 32
 
-	Adapter_interface = 0
-	Adapter_lock = 4
+	Adapter_driver = 1
+	Adapter_id = 5
 
 	Func_Transmit = 0
 	Func_Start_Receiver = 4
@@ -41,46 +39,71 @@ Error_Code:
 	ADAPTER_TABLE_PROBLEM = -1
 	ADAPTER_NOT_EXISTED = -5
 
-jmp Function_Init
+jmp near dword Function_Init
+dd Header
 Interface:
 	dd Function_Add_adapter
 	dd Function_Transmit
 	;dd Function_Start_Receiver
 	;dd Function_Stop_Receiver
+Header:
 
 Function_Init:
 	push ebx
 	push edi
 	push esi
+	push edx
 
 	mov ebx, eax
-	mov edi, INetwork
 	lea esi, [eax + Interface]
-	mov [fs:edi], eax
-	add edi, 4
+	mov [fs:INetwork], eax
 
+	xor eax, eax
 	.Loop:
-		mov eax, [fs:esi]
-		add eax, ebx
-		mov [fs:edi], eax
+		add [fs:esi + eax], ebx
+		add eax, 4
+		cmp eax, 4 * 2
+		jb .Loop
 
-		add edi, 4
-		add esi, 4
+	mov [gs:ebp], dword 0
+	mov [gs:ebp + 4], dword 0
+	mov [gs:ebp + 8], dword 0
+	mov [gs:ebp + 12], dword 6
+	mov [gs:ebp + 16], dword ebx
+	invoke ISystem, ISystem.Register_Module
 
-		cmp edi, INetwork + 4 * 2
-		jna .Loop
+	xor ecx, ecx
+	invoke ISystem, ISystem.Get_address_space
+	push ecx
+
+	mov [gs:ebp], dword $1000
+	invoke ISystem, ISystem.Allocate
+
+	mov esi, [ss:_Result]
+
+	mov [gs:ebp], esi
+	mov [gs:ebp + 4], dword 0
+	invoke ISystem, ISystem.Add_address_space
+
+	mov edi, [ss:_Result]
+	mov ecx, edi
+	xor edx, edx
+	invoke ISystem, ISystem.Set_address_space
 
 	; Create adapter table
-	mov [gs:ebp], dword 32
-	mov [gs:ebp + 4], dword NumOf_Adapters
-	invoke IData.Create_table
+	mov [gs:ebp], dword 0
+	mov [gs:ebp + 4], dword 32
+	mov [gs:ebp + 8], dword 32 * NumOf_Adapters
+	invoke IData, IData.Create_table
+
+	pop ecx
+	xor edx, edx
+	invoke ISystem, ISystem.Set_address_space
 
 	test eax, eax
 	; Error handling here
 
-	mov eax, [ss:_Result]
-	mov [fs:ebx + Var.Adapter_table], eax
-
+	pop edx
 	pop esi
 	pop edi
 	pop ebx
@@ -95,36 +118,35 @@ Function_Add_adapter:	; Function 1
 
 	push ebx
 	push ecx
-	push esi
+	push edx
 
-	mov ebx, [fs:INetwork]
-	mov esi, [fs:ebx + Var.Adapter_table]
+	xor ecx, ecx
+	invoke ISystem, ISystem.Get_address_space
+	push ecx
 
-	mov [gs:ebp], esi
-	invoke IData.Add_table_entry
+	mov ecx, [fs:INetwork]
+	xor edx, edx
+	invoke ISystem, ISystem.Set_address_space
+
+	mov [gs:ebp], dword 0
+	invoke IData, IData.Add_table_entry
 
 	test eax, eax
 	jnz .Error1
 
-	mov ecx, [ss:_Result]
-	mov [gs:ebp], esi
-	mov [gs:ebp + 4], ecx
-	invoke IData.Modify_table_entry
+	mov ebx, [ss:_Result + 4]
 
-	mov ebx, [ss:_Result]
 	mov eax, .Driver
-	mov [ds:ebx], eax
+	mov [ds:ebx + 1], eax
 	mov eax, .AdapterId
-	mov [ds:ebx + 4], eax
+	mov [ds:ebx + 5], eax
 
-	mov [gs:ebp], esi
-	mov [gs:ebp + 4], ecx
-	invoke IData.Finish_modify_table_entry
-
-	xor eax, eax
+	pop ecx
+	xor edx, edx
+	invoke ISystem, ISystem.Set_address_space
 
 	.Return:
-	pop esi
+	pop edx
 	pop ecx
 	pop ebx
 
@@ -151,36 +173,39 @@ Function_Transmit:	; Function 3
 
 	push ebx
 	push ecx
-	push esi
+	push edx
 
-	mov ebx, [fs:INetwork]
-	mov esi, [fs:ebx + Var.Adapter_table]
+	xor ecx, ecx
+	invoke ISystem, ISystem.Get_address_space
+	push ecx
+
+	mov ecx, [fs:INetwork]
+	xor edx, edx
+	invoke ISystem, ISystem.Set_address_space
 
 	mov ecx, .Adapter
-	mov [gs:ebp], esi
+	mov [gs:ebp], dword 0
 	mov [gs:ebp + 4], ecx
-	invoke IData.Read_table_entry
+	invoke IData, IData.Get_table_entry
 
 	test eax, eax
 	jnz .Error1
 
 	mov ebx, [ss:_Result]
-	mov eax, [ds:ebx]
-	mov [gs:ebp], eax
-	mov eax, [ds:ebx + 4]
-	mov [gs:ebp + 4], eax
-	sub ebp, 14
-	mov eax, [ds:ebx]
-	mov eax, [fs:eax + 4]
-	call dword [fs:eax]
-	add ebp, 14
+	mov eax, [ds:ebx + Adapter_id]
+	mov .Adapter, eax
 
-	mov [gs:ebp], esi
-	mov [gs:ebp + 4], ecx
-	invoke IData.Finish_read_table_entry
+	pop ecx
+	xor edx, edx
+	invoke ISystem, ISystem.Set_address_space
+
+	mov ecx, [ds:ebx + Adapter_driver]
+	invoke2 ecx, Func_Transmit
+
+	xor eax, eax
 
 	.Return:
-	pop esi
+	pop edx
 	pop ecx
 	pop ebx
 
@@ -199,6 +224,4 @@ Function_Transmit:	; Function 3
 	restore .Protocol
 
 Var:
-	.Adapter_table dd 0
-	.Recipient_list dd 255 dup 0
 	.nAdap dd 0

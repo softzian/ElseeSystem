@@ -20,7 +20,7 @@ IInterrupt = $100004
 ; Function 4: Enable_IRQ (IRQNum : Byte)
 ; Function 5: Send_EOI
 
-dd Function_Init
+jmp near dword Function_Init
 dd Header
 Interface:
 	.Install_ISR dd Function_Install_ISR
@@ -57,6 +57,13 @@ Function_Init:
 	mov [gs:ebp], byte 13
 	mov [gs:ebp + 1], eax
 	call Function_Install_ISR
+
+	mov [gs:ebp], dword 4
+	mov [gs:ebp + 4], dword 0
+	mov [gs:ebp + 8], dword 0
+	mov [gs:ebp + 12], dword 0
+	mov [gs:ebp + 16], dword ebx
+	invoke ISystem, ISystem.Register_Module
 
 	pop esi
 	pop edi
@@ -171,7 +178,7 @@ macro Write str, x
 {
 	lea eax, [str + 1]
 	mov [gs:ebp], eax
-	mov [gs:ebp + 4], dword $110000
+	mov [gs:ebp + 4], dword $10
 	xor eax, eax
 	mov al, byte [fs:str]
 	mov [gs:ebp + 8], eax
@@ -179,7 +186,7 @@ macro Write str, x
 
 	xor eax, eax
 	mov al, byte [fs:str]
-	mov [gs:ebp], dword $110000
+	mov [gs:ebp], dword $10
 	mov [gs:ebp + 4], ax
 	invoke IVideo, IVideo.Write_Telex
 
@@ -191,6 +198,9 @@ macro Write str, x
 
 Procedure_INT_13:
 	cli
+
+	mov cx, $7 * 8
+	mov ds, cx
 
 	invoke IVideo, IVideo.Clear_Screen
 

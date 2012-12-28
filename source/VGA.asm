@@ -36,7 +36,7 @@ IVideo = $10000C
 ; Function 13: Clear_text_screen (Context : Handle)
 ; Function 14: Set_text_cursor (Context : Handle; X, Y : Byte)
 
-dd Function_Init
+jmp near dword Function_Init
 dd Header
 Interface:
 	dd Function_Write_Telex
@@ -104,6 +104,13 @@ Function_Init:
 		add eax, 4
 		cmp eax, 4 * 14
 		jb .Loop
+
+	mov [gs:ebp], dword 3
+	mov [gs:ebp + 4], dword 0
+	mov [gs:ebp + 8], dword 0
+	mov [gs:ebp + 12], dword 0
+	mov [gs:ebp + 16], dword ebx
+	invoke ISystem, ISystem.Register_Module
 
 	xor eax, eax
 

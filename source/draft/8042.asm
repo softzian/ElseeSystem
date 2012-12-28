@@ -303,9 +303,8 @@ Function_Shift_character:
 Procedure_IRQ1:
 	pusha
 
-	mov ax, gs
-	push eax
-	mov ax, $28
+	push gs
+	mov ax, 8 * 8
 	mov gs, ax
 	mov ebp, 16
 
@@ -332,8 +331,7 @@ Procedure_IRQ1:
 
 	invoke IInterrupt.Send_EOI
 
-	pop eax
-	mov gs, ax
+	pop gs
 
 	popa
 	iret

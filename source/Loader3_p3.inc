@@ -9,7 +9,6 @@ Init_base_system:
 	; ------------------ ;
 	mov eax, $10000 	; System module
 	Set_Active_Module eax
-	add [fs:eax], eax
 	Init_module eax
 
 	call Init_code_table
@@ -20,17 +19,14 @@ Init_base_system:
 	; ------------------ ;
 	mov eax, $11000 	; Video
 	Set_Active_Module eax
-	add [fs:eax], eax
 	Init_module eax
 
 	mov eax, $13000 	; Interrupt
 	Set_Active_Module eax
-	add [fs:eax], eax
 	Init_module eax
 
 	mov eax, $14000 	; Thread
 	Set_Active_Module eax
-	add [fs:eax], eax
 	Init_module eax
 
 	;mov eax, $18000         ; Handle
@@ -55,24 +51,23 @@ Init_base_system:
 	;mov eax, $17000         ; Conversion
 	;call eax
 
-	;mov eax, $30000         ; Data
-	;Set_Active_Module eax
-	;call eax
+	mov eax, $30000 	; Data
+	Set_Active_Module eax
+	Init_module eax
 
-	;mov eax, $31000         ; Network
-	;Set_Active_Module eax
-	;call eax
+	mov eax, $31000 	; Network
+	Set_Active_Module eax
+	Init_module eax
 
-	;mov eax, $32000         ; RTL8139
-	;Set_Active_Module eax
-	;add [fs:eax], eax
-	;call dword [fs:eax]
+	mov eax, $32000 	; RTL8139
+	Set_Active_Module eax
+	Init_module eax
 
 	Set_Active_Module $7000
-	mov [gs:ebp], dword 0
+	mov [gs:ebp], dword 1
 	mov [gs:ebp + 4], dword 0
 	mov [gs:ebp + 8], dword 0
-	mov [gs:ebp + 12], dword 1
+	mov [gs:ebp + 12], dword 0
 	mov [gs:ebp + 16], dword $7000
 	invoke ISystem, ISystem.Register_Module
 
@@ -117,7 +112,7 @@ Init_code_table:
 	invoke ISystem, ISystem.Mark_Code
 
 	mov [gs:ebp], dword $7000
-	mov [gs:ebp + 4], dword $8FFF
+	mov [gs:ebp + 4], dword $FFFF
 	mov [gs:ebp + 8], dword 1
 	invoke ISystem, ISystem.Mark_Code
 
@@ -146,30 +141,30 @@ Init_code_table:
 	mov [gs:ebp + 8], dword 1
 	invoke ISystem, ISystem.Mark_Code
 
-	mov [gs:ebp], dword $15000
-	mov [gs:ebp + 4], dword $15FFF
-	mov [gs:ebp + 8], dword 1
-	invoke ISystem, ISystem.Mark_Code
+	;mov [gs:ebp], dword $15000
+	;mov [gs:ebp + 4], dword $15FFF
+	;mov [gs:ebp + 8], dword 1
+	;invoke ISystem, ISystem.Mark_Code
 
-	mov [gs:ebp], dword $16000
-	mov [gs:ebp + 4], dword $16FFF
-	mov [gs:ebp + 8], dword 1
-	invoke ISystem, ISystem.Mark_Code
+	;mov [gs:ebp], dword $16000
+	;mov [gs:ebp + 4], dword $16FFF
+	;mov [gs:ebp + 8], dword 1
+	;invoke ISystem, ISystem.Mark_Code
 
 	;push $17000
 	;push $17FFF
 	;push 1
 	;invoke ISystem.Mark_Code
 
-	mov [gs:ebp], dword $18000
-	mov [gs:ebp + 4], dword $18FFF
-	mov [gs:ebp + 8], dword 1
-	invoke ISystem, ISystem.Mark_Code
+	;mov [gs:ebp], dword $18000
+	;mov [gs:ebp + 4], dword $18FFF
+	;mov [gs:ebp + 8], dword 1
+	;invoke ISystem, ISystem.Mark_Code
 
-	mov [gs:ebp], dword $19000
-	mov [gs:ebp + 4], dword $19FFF
-	mov [gs:ebp + 8], dword 1
-	invoke ISystem, ISystem.Mark_Code
+	;mov [gs:ebp], dword $19000
+	;mov [gs:ebp + 4], dword $19FFF
+	;mov [gs:ebp + 8], dword 1
+	;invoke ISystem, ISystem.Mark_Code
 
 	mov [gs:ebp], dword $20000
 	mov [gs:ebp + 4], dword $2FFFF
@@ -219,6 +214,11 @@ Init_Memory_Table:
 	mov [gs:ebp + 4], dword $3FFFFF
 	mov [gs:ebp + 8], dword 0
 	invoke ISystem, ISystem.Create_Region
+
+	mov [gs:ebp], dword $204000
+	mov [gs:ebp + 4], dword $205FFF
+	mov [gs:ebp + 8], dword $7000
+	invoke ISystem, ISystem.Mark_Memory
 
 	ret
 
