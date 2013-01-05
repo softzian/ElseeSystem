@@ -138,6 +138,10 @@ Function_Register_Module:
 	jmp .Return
 
 	restore .Module_address
+	restore .Module_id_1
+	restore .Module_id_2
+	restore .Module_id_3
+	restore .Module_id_4
 
 Get_module_entry:
 	; ECX = Module address
@@ -356,6 +360,9 @@ Function_Add_address_space:
 	mov eax, CANNOT_ALLOCATE_MEMORY
 	jmp .Return
 
+	restore .Base
+	restore .Limit
+
 Function_Get_descriptor:
 	; ECX = Address_space index
 	; Output to EBX and ECX = Descriptor
@@ -402,30 +409,23 @@ Function_Get_address_space:
 	mov ecx, [fs:System_data + DS_space + ecx * 4]
 	ret
 
-Function_Set_address_space:
-	; ECX = Address space index
-	; EDX = Segment
-	push ebx
+Function_Set_DS_space:
+	.Addr_space equ dword [ss:esp + 12 + 4]
 
+	push ebx
 	push ecx
+	push edx
+
+	mov ecx, .Addr_space
 	call Function_Get_descriptor
 
 	test eax, eax
 	jnz .Error1
 
-	test edx, edx
-	jz .DS
-
-	pop dword [fs:System_data + ES_space]
-
-	mov edx, 6
-	call Function_Load_GDT_entry
-	mov ax, $6 * 8
-	mov es, ax
-	jmp .Finish
-
-	.DS:
-	pop dword [fs:System_data + DS_space]
+	mov eax, .Addr_space
+	mov edx, [fs:System_data + DS_space]
+	mov [fs:System_data + DS_space], eax
+	mov .Addr_space, edx
 
 	mov edx, 3
 	call Function_Load_GDT_entry
@@ -436,13 +436,120 @@ Function_Set_address_space:
 	xor eax, eax
 
 	.Return:
+	pop edx
+	pop ecx
 	pop ebx
 	ret
 
 	.Error1:
-	pop ecx
 	mov eax, NOT_EXISTED_ADDRESS_SPACE
 	jmp .Return
 
-	restore .Address_space
-	restore .Segment
+Function_Set_ES_space:
+	.Addr_space equ dword [ss:esp + 12 + 4]
+
+	push ebx
+	push ecx
+	push edx
+
+	mov ecx, .Addr_space
+	call Function_Get_descriptor
+
+	test eax, eax
+	jnz .Error1
+
+	mov eax, .Addr_space
+	mov edx, [fs:System_data + ES_space]
+	mov [fs:System_data + ES_space], eax
+	mov .Addr_space, edx
+
+	mov edx, 4
+	call Function_Load_GDT_entry
+	mov ax, $4 * 8
+	mov ds, ax
+
+	.Finish:
+	xor eax, eax
+
+	.Return:
+	pop edx
+	pop ecx
+	pop ebx
+	ret
+
+	.Error1:
+	mov eax, NOT_EXISTED_ADDRESS_SPACE
+	jmp .Return
+
+Function_Find_module:
+	.Module_id_1 equ dword [gs:ebp - 16] ; Module_id : Card128
+	.Module_id_2 equ dword [gs:ebp - 12]
+	.Module_id_3 equ dword [gs:ebp - 8]
+	.Module_id_4 equ dword [gs:ebp - 4]
+
+	push ebp
+	add ebp, 16
+
+	push ebx
+	push ecx
+	push edx
+
+	xor eax, eax
+	.Loop1:
+		mov ebx, [fs:Module_Table + eax]
+		test ebx, ebx
+		jz .Next1
+
+		xor ecx, ecx
+		.Loop2:
+			cmp [fs:ebx + ecx + Module_flag], dword 1
+			jne .Next2
+
+			mov edx, [fs:ebx + ecx + Module_id]
+			cmp edx, .Module_id_1
+			jne .Next2
+			mov edx, [fs:ebx + ecx + Module_id + 4]
+			cmp edx, .Module_id_2
+			jne .Next2
+			mov edx, [fs:ebx + ecx + Module_id + 8]
+			cmp edx, .Module_id_3
+			jne .Next2
+			mov edx, [fs:ebx + ecx + Module_id + 12]
+			cmp edx, .Module_id_4
+			je .Found
+
+			.Next2:
+			add ecx, SizeOf_Module_Entry
+			cmp ecx, SizeOf_Module_Table
+			jb .Loop2
+
+		.Next1:
+		add eax, 4
+		cmp eax, $1000
+		jb .Loop1
+		jmp .Error1
+
+	.Found:
+	shl eax, 20 - 2
+	shl ecx, 12 - 5
+	add eax, ecx
+
+	mov [ss:_Result], eax
+	xor eax, eax
+
+	.Return:
+	pop edx
+	pop ecx
+	pop ebx
+
+	pop ebp
+	ret
+
+	.Error1:
+	mov eax, NOT_FOUND
+	jmp .Return
+
+	restore .Module_id_1
+	restore .Module_id_2
+	restore .Module_id_3
+	restore .Module_id_4

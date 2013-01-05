@@ -13,7 +13,7 @@ include 'include\errcode.inc'
 include 'include\Header.inc'
 use32
 
-INetwork = $100C00
+INetwork = $100018
 ; Function 1: Add_adapter (Driver : Address; AdapterId : Cardinal)
 
 ; Function 4: Transmit (Adapter : Cardinal; Dest : MAC_address; Payload : Address; Size : Card16; Protocol : Card16)
@@ -72,10 +72,6 @@ Function_Init:
 	mov [gs:ebp + 16], dword ebx
 	invoke ISystem, ISystem.Register_Module
 
-	xor ecx, ecx
-	invoke ISystem, ISystem.Get_address_space
-	push ecx
-
 	mov [gs:ebp], dword $1000
 	invoke ISystem, ISystem.Allocate
 
@@ -86,9 +82,8 @@ Function_Init:
 	invoke ISystem, ISystem.Add_address_space
 
 	mov edi, [ss:_Result]
-	mov ecx, edi
-	xor edx, edx
-	invoke ISystem, ISystem.Set_address_space
+	push edi
+	invoke ISystem, ISystem.Set_DS_space
 
 	; Create adapter table
 	mov [gs:ebp], dword 0
@@ -96,9 +91,8 @@ Function_Init:
 	mov [gs:ebp + 8], dword 32 * NumOf_Adapters
 	invoke IData, IData.Create_table
 
-	pop ecx
-	xor edx, edx
-	invoke ISystem, ISystem.Set_address_space
+	invoke ISystem, ISystem.Set_DS_space
+	add esp, 4
 
 	test eax, eax
 	; Error handling here
@@ -120,13 +114,8 @@ Function_Add_adapter:	; Function 1
 	push ecx
 	push edx
 
-	xor ecx, ecx
-	invoke ISystem, ISystem.Get_address_space
-	push ecx
-
-	mov ecx, [fs:INetwork]
-	xor edx, edx
-	invoke ISystem, ISystem.Set_address_space
+	push dword [fs:INetwork]
+	invoke ISystem, ISystem.Set_DS_space
 
 	mov [gs:ebp], dword 0
 	invoke IData, IData.Add_table_entry
@@ -141,9 +130,8 @@ Function_Add_adapter:	; Function 1
 	mov eax, .AdapterId
 	mov [ds:ebx + 5], eax
 
-	pop ecx
-	xor edx, edx
-	invoke ISystem, ISystem.Set_address_space
+	invoke ISystem, ISystem.Set_DS_space
+	add esp, 4
 
 	.Return:
 	pop edx
@@ -175,13 +163,8 @@ Function_Transmit:	; Function 3
 	push ecx
 	push edx
 
-	xor ecx, ecx
-	invoke ISystem, ISystem.Get_address_space
-	push ecx
-
-	mov ecx, [fs:INetwork]
-	xor edx, edx
-	invoke ISystem, ISystem.Set_address_space
+	push dword [fs:INetwork]
+	invoke ISystem, ISystem.Set_DS_space
 
 	mov ecx, .Adapter
 	mov [gs:ebp], dword 0
@@ -195,14 +178,12 @@ Function_Transmit:	; Function 3
 	mov eax, [ds:ebx + Adapter_id]
 	mov .Adapter, eax
 
-	pop ecx
-	xor edx, edx
-	invoke ISystem, ISystem.Set_address_space
+	mov ebx, [ds:ebx + Adapter_driver]
 
-	mov ecx, [ds:ebx + Adapter_driver]
-	invoke2 ecx, Func_Transmit
+	invoke ISystem, ISystem.Set_DS_space
+	add esp, 4
 
-	xor eax, eax
+	invoke2 ebx, Func_Transmit
 
 	.Return:
 	pop edx

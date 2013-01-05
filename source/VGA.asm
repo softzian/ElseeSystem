@@ -42,6 +42,7 @@ Interface:
 	dd Function_Write_Telex
 	dd Function_Clear_Screen
 	dd Function_New_Line
+	dd Function_Write_Telex2
 
 	dd Function_Alloc_context
 	dd 0
@@ -67,7 +68,7 @@ IVideo_Error_code:
 	VIDEO_BUFFER_OVERFLOW = -3
 	CANNOT_CREATE_HANDLE = -4
 	ALLOCATE_MEMORY_PROBLEM = -6
-	CANNOT_SWITCH_IN_MEMORY_CONTEXT = -7
+	CANNOT_SWITCH_MEMORY_CONTEXT = -7
 	INVALID_CONTEXT_HANDLE = -8
 	NOT_TEXT_MODE_CONTEXT = -9
 	UNSUPPORT_CONTEXT_TYPE = -10
@@ -77,7 +78,7 @@ Const:
 
 	; Context record
 	Context_type = 0
-	Context_driver = 4
+	Context_lock = 4
 
 	; Text mode context record (extends from Context)
 	Text_mode_context_width = 8
@@ -88,6 +89,11 @@ Const:
 
 	; Context type
 	VGA_TEXT_MODE_CONTEXT = 1
+
+	Allocator1 equ [ds:$10]
+	Allocator1.Init_allocator = 0
+	Allocator1.Allocate = 4
+	Allocator1.Deallocate = 8
 
 Function_Init:
 	push ebx
@@ -105,12 +111,50 @@ Function_Init:
 		cmp eax, 4 * 14
 		jb .Loop
 
+	; Register module
 	mov [gs:ebp], dword 3
 	mov [gs:ebp + 4], dword 0
 	mov [gs:ebp + 8], dword 0
 	mov [gs:ebp + 12], dword 0
-	mov [gs:ebp + 16], dword ebx
+	mov [gs:ebp + 16], ebx
 	invoke ISystem, ISystem.Register_Module
+
+	test eax, eax
+	jnz .Error1
+
+	; Allocate address space
+	;mov [gs:ebp], dword $10000
+	;invoke ISystem, ISystem.Allocate
+
+	;mov esi, [ss:_Result]
+
+	;mov [gs:ebp], esi
+	;mov [gs:ebp + 4], dword $F
+	;invoke ISystem, ISystem.Add_address_space
+
+	;test eax, eax
+	;jnz .Error2
+
+	;push dword [ss:_Result]
+	;invoke ISystem, ISystem.Set_DS_space
+
+	;mov [gs:ebp], dword 1
+	;mov [gs:ebp + 4], dword 0
+	;mov [gs:ebp + 8], dword 1
+	;mov [gs:ebp + 12], dword 0
+	;invoke ISystem, ISystem.Find_module
+
+	;test eax, eax
+	;jnz .Error3
+
+	;mov edi, [ss:_Result]
+	;mov Allocator1, edi
+	;mov [gs:ebp], dword $1000
+	;mov [gs:ebp + 4], dword $FFFF
+	;invoke2 edi, Allocator1.Init_allocator
+
+	;invoke ISystem, ISystem.Set_DS_space
+	;add esp, 4
 
 	xor eax, eax
 
@@ -119,6 +163,18 @@ Function_Init:
 	pop edi
 	pop ebx
 	ret
+
+	.Error1:
+	mov eax, 1
+	jmp .Return
+
+	.Error2:
+	mov eax, 2
+	jmp .Return
+
+	.Error3:
+	mov eax, 3
+	jmp .Return
 
 Function_Write_Telex:	; Function 1
 	.Text equ dword [gs:ebp - 6]
@@ -207,7 +263,7 @@ Function_Clear_Screen:	; Function 2
 
 	.Clear_Flag:
 	mov ebx, [fs:IVideo]
-	mov word [fs:ebx+Var.Flag], 0
+	mov word [fs:ebx + Var.Flag], 0
 
 	pop ecx
 	pop edi
@@ -246,6 +302,76 @@ Function_New_Line:	; Function 3
 	pop ebx
 	ret
 
+Function_Write_Telex2:	 ; Function 4
+	.Text equ dword [gs:ebp - 6]
+	.Count equ word [gs:ebp - 2]
+
+	push ebp
+	add ebp, 6
+
+	push ebx
+	push ecx
+	push edx
+	push esi
+	push edi
+
+	mov ebx, [fs:IVideo]
+
+	mov ax, .Count
+	cmp ax, 0
+	je .Error1
+	cmp ax, 2000
+	ja .Error1
+	add ax, [fs:ebx + Var.Cursor]
+	cmp ax, 2000
+	jb .Write
+
+	mov word [fs:ebx + Var.Cursor], 0    ; Reset cursor position if the remaining display space is not enough
+
+	.Write:
+	mov esi, .Text
+
+	mov edi, $B8000
+	xor eax, eax
+	mov ax, [fs:ebx + Var.Cursor]
+	shl eax, 1
+	add edi, eax	; EDI points to current Cursor position in Video memory
+
+	xor ecx, ecx
+	mov cx, .Count
+	.Copy_Text_to_Video_mem:
+	mov al, [fs:esi]
+	mov byte [fs:edi + 1], 00001111b
+	mov [fs:edi], al
+	inc esi
+	add edi, 2
+	loop .Copy_Text_to_Video_mem
+
+	.Update_Cursor_position:
+	mov ax, .Count
+	add [fs:ebx + Var.Cursor], ax
+	xor eax, eax
+
+	.Set_Flag:
+	bts word [fs:ebx + Var.Flag], Write_Flag
+
+	.Return:
+	pop edi
+	pop esi
+	pop edx
+	pop ecx
+	pop ebx
+
+	pop ebp
+	ret
+
+	.Error1:
+	mov eax, INVALID_COUNT
+	jmp .Return
+
+	restore .Count
+	restore .Text
+
 Function_Alloc_context: 	; Function 4
 	.Type equ dword [gs:ebp - 4] ; Type : Cardinal
 
@@ -262,15 +388,6 @@ Function_Alloc_context: 	; Function 4
 	.VGA_text_mode_context:
 	call Create_VGA_text_mode_context
 
-	.Create_handle:
-	mov [gs:ebp], ebx
-	mov [gs:ebp + 4], dword HANDLE_VIDEO_CONTEXT
-	mov [gs:ebp + 8], word 1
-	invoke IHandle, IHandle.Create_handle
-
-	test eax, eax
-	jnz .Error2
-
 	.Return:
 	pop ebx
 
@@ -281,21 +398,22 @@ Function_Alloc_context: 	; Function 4
 	mov eax, UNSUPPORT_CONTEXT_TYPE
 	jmp .Return
 
-	.Error2:
-	mov [gs:ebp], ebx
-	invoke ISystem, ISystem.Deallocate
-	mov eax, CANNOT_CREATE_HANDLE
-	jmp .Return
-
 	restore .Type
 
 Create_VGA_text_mode_context:
 	; Result in EBX
 	push ecx
+	push edx
+	push esi
+
+	mov esi, [fs:IVideo]
+
+	push esi
+	invoke ISystem, ISystem.Set_DS_space
 
 	; Allocate context record
 	mov [gs:ebp], dword (Text_mode_context_buffer + 2000 * 2)
-	invoke ISystem, ISystem.Allocate
+	invoke3 Allocator1, Allocator1.Allocate
 
 	test eax, eax
 	jnz .Error1
@@ -305,9 +423,7 @@ Create_VGA_text_mode_context:
 	mov eax, VGA_TEXT_MODE_CONTEXT
 	bts eax, 31
 	mov [ds:ebx + Context_type], eax
-
-	mov eax, [ss:_ModuleIdx]
-	mov [ds:ebx + Context_driver], eax
+	mov [ds:ebx + Context_lock], dword 0
 
 	mov [ds:ebx + Text_mode_context_width], byte 80
 	mov [ds:ebx + Text_mode_context_height], byte 25
@@ -315,56 +431,73 @@ Create_VGA_text_mode_context:
 
 	mov ecx, 2000
 	.Loop:
-	mov [ds:ebx + Text_mode_context_buffer + ecx * 2 - 2], word $0F00
-	loop .Loop
+		mov [ds:ebx + Text_mode_context_buffer + ecx * 2 - 2], word $0F00
+		loop .Loop
 
+	mov [ss:_Result], ebx
 	xor eax, eax
-	pop ecx
-	ret
-	.Error1:
-	mov eax, ALLOCATE_MEMORY_PROBLEM
-	ret
-
-Function_Lock_context:		; Function 7
-	invoke IHandle, IHandle.Request_handle
-	ret
-
-Function_Release_context:	; Function 8
-	invoke IHandle, IHandle.Release_handle
-	ret
-
-Resolve_context_handle:
-	; ECX - Context
-	; Output:
-	; ESI <- Handle address
-
-	push edi
-
-	mov [gs:ebp], ecx
-	invoke IHandle, IHandle.Resolve_handle
-
-	test eax, eax
-	jnz .Error1
-
-	mov esi, [ss:_Result]
-	mov edi, [ss:_Result + 4]
-
-	cmp edi, HANDLE_VIDEO_CONTEXT
-	jne .Error1
-
-	mov eax, [ss:_ModuleIdx]
-	cmp [ds:esi + Context_driver], eax
-	jne .Error1
-
-	xor al, al
 
 	.Return:
-	pop edi
+	invoke ISystem, ISystem.Set_DS_space
+	add esp, 4
+
+	pop esi
+	pop edx
+	pop ecx
 	ret
 
 	.Error1:
-	mov al, 1
+	mov eax, ALLOCATE_MEMORY_PROBLEM
 	jmp .Return
+
+Lock_context:
+	lock bts dword [ds:eax + Context_lock], 0
+	jc .Wait
+	ret
+	.Wait: invoke IThread, IThread.Yield
+	jmp Lock_context
+
+Function_Lock_context:		; Function 7
+	.Context equ dword [gs:ebp - 4]
+
+	push ebp
+	add ebp, 4
+
+	push dword [fs:IVideo]
+	invoke ISystem, ISystem.Set_DS_space
+
+	mov eax, .Context
+	call Lock_context
+
+	.Return:
+	invoke ISystem, ISystem.Set_DS_space
+	add esp, 4
+
+	pop ebp
+	ret
+
+	restore .Context
+
+Function_Release_context:	; Function 8
+	.Context equ dword [gs:ebp - 4]
+
+	push ebp
+	add ebp, 4
+
+	push dword [fs:IVideo]
+	invoke ISystem, ISystem.Set_DS_space
+
+	mov eax, .Context
+	btr dword [ds:eax + Context_lock], 0
+
+	.Return:
+	invoke ISystem, ISystem.Set_DS_space
+	add esp, 4
+
+	pop ebp
+	ret
+
+	restore .Context
 
 Function_Switch_context:	; Function 9
 	.Context equ dword [gs:ebp - 4] ; Context : Handle
@@ -372,109 +505,97 @@ Function_Switch_context:	; Function 9
 	push ebp
 	add ebp, 4
 
-	push ebx
 	push ecx
 	push edx
 	push esi
 
-	mov ebx, [fs:IVideo]
-	mov ecx, .Context
+	mov esi, [fs:IVideo]
 
-	mov edx, [fs:ebx + Var.Active_context]
+	push esi
+	invoke ISystem, ISystem.Set_DS_space
+
+	mov ecx, .Context
+	mov edx, [fs:esi + Var.Active_context]
 	cmp edx, ecx
 	je .Do_nothing
 
-	mov [gs:ebp], ecx
-	call Function_Lock_context
+	mov eax, ecx
+	call Lock_context
 
-	test eax, eax
-	jnz .Error1
-
-	call Resolve_context_handle
-	test al, al
-	jnz .Error2
-
-	bt dword [ds:esi + Context_type], 31
+	bt dword [ds:ecx + Context_type], 31
 	jnc .Error3
 
-	mov [gs:ebp], edx
-	call Function_Lock_context
+	test edx, edx
+	jz .Active_console_invalid
 
-	test eax, eax
-	jnz .Active_console_is_invalid
+	mov eax, edx
+	call Lock_context
 
 	call Restore_context
-	mov [fs:ebx + Var.Active_context], ecx
-	xor ebx, ebx
+	mov [fs:esi + Var.Active_context], ecx
 
 	.Release1:
-	mov [gs:ebp], edx
-	call Function_Release_context
+	btr dword [ds:edx + Context_lock], 0
 
 	.Release2:
-	mov [gs:ebp], ecx
-	call Function_Release_context
+	btr dword [ds:ecx + Context_lock], 0
 
 	.Return:
-	mov eax, ebx
+	invoke ISystem, ISystem.Set_DS_space
+	add esp, 4
+
+	mov eax, esi
 
 	pop esi
 	pop edx
 	pop ecx
-	pop ebx
 
 	pop ebp
 	ret
 
-	.Error1:
-	mov ebx, INVALID_CONTEXT_HANDLE
-	jmp .Return
-
-	.Error2:
-	mov ebx, INVALID_CONTEXT_HANDLE
-	jmp .Release2
-
 	.Error3:
-	mov ebx, CANNOT_SWITCH_IN_MEMORY_CONTEXT
+	mov esi, CANNOT_SWITCH_MEMORY_CONTEXT
 	jmp .Release2
 
 	.Do_nothing:
-	xor ebx, ebx
+	xor esi, esi
 	jmp .Return
 
-	.Active_console_is_invalid:
+	.Active_console_invalid:
 	call Restore_context
-	mov [fs:ebx + Var.Active_context], ecx
-	xor ebx, ebx
+	mov [fs:esi + Var.Active_context], ecx
+	xor esi, esi
 	jmp .Release2
 
 	restore .Context
 
 Restore_context:
-	mov eax, [ds:esi + Context_type]
+	mov eax, [ds:ecx + Context_type]
 	btr eax, 31
 	cmp eax, VGA_TEXT_MODE_CONTEXT
 	je Restore_text_mode_context
 	ret
 
 Restore_text_mode_context:
+	push ebx
 	push ecx
 	push edx
 
-	movzx edx, word [ds:esi + Text_mode_context_size]
-	xor ecx, ecx
+	movzx edx, word [ds:ecx + Text_mode_context_size]
+	xor ebx, ebx
 	.Loop:
-		mov ax, [ds:esi + Text_mode_context_buffer + ecx * 2]
-		mov [fs:$B8000 + ecx * 2], ax
-		inc ecx
-		cmp ecx, edx
+		mov ax, [ds:ecx + Text_mode_context_buffer + ebx * 2]
+		mov [fs:$B8000 + ebx * 2], ax
+		inc ebx
+		cmp ebx, edx
 		jb .Loop
 
-	mov ax, [ds:esi + Text_mode_context_cursor]
+	mov ax, [ds:ecx + Text_mode_context_cursor]
 	call Set_VGA_text_cursor
 
 	pop edx
 	pop ecx
+	pop ebx
 	ret
 
 Function_Write_text_char:
@@ -491,12 +612,12 @@ Function_Write_text_char:
 	push edx
 	push esi
 
-	mov ecx, .Context
-	call Resolve_context_handle
-	test al, al
-	jnz .Error1
+	mov esi, [fs:IVideo]
+	push esi
+	invoke ISystem, ISystem.Set_DS_space
 
-	mov eax, [ds:esi + Context_type]
+	mov ecx, .Context
+	mov eax, [ds:ecx + Context_type]
 	btr eax, 31
 	cmp eax, VGA_TEXT_MODE_CONTEXT
 	jne .Error2
@@ -510,9 +631,8 @@ Function_Write_text_char:
 	movzx edx, ax
 	mov al, .Char
 	mov ah, .Attribute
-	mov [ds:esi + Text_mode_context_buffer + edx * 2], ax
+	mov [ds:ecx + Text_mode_context_buffer + edx * 2], ax
 
-	mov esi, [fs:IVideo]
 	cmp ecx, [fs:esi + Var.Active_context]
 	jne .Finish
 
@@ -522,6 +642,9 @@ Function_Write_text_char:
 	xor eax, eax
 
 	.Return:
+	invoke ISystem, ISystem.Set_DS_space
+	add esp, 4
+
 	pop esi
 	pop edx
 	pop ecx
@@ -546,10 +669,10 @@ Function_Write_text_char:
 	restore .Y
 
 Check_and_calculate_coordinate:
-	cmp al, [ds:esi + Text_mode_context_height]
+	cmp al, [ds:ecx + Text_mode_context_height]
 	jae .Error
 
-	mov dh, [ds:esi + Text_mode_context_width]
+	mov dh, [ds:ecx + Text_mode_context_width]
 	cmp dl, dh
 	jae .Error
 
@@ -581,19 +704,18 @@ Function_Write_text_line:
 	push esi
 	push edi
 
-	mov ecx, .Context
-	call Resolve_context_handle
-	test al, al
-	jnz .Error1
-
-	mov eax, [ds:esi + Context_type]
-	btr eax, 31
-	cmp eax, VGA_TEXT_MODE_CONTEXT
-	jne .Error2
+	push dword [fs:IVideo]
+	invoke ISystem, ISystem.Set_ES_space
 
 	movzx edi, .Count
 	test edi, edi
 	jz .Error4
+
+	mov esi, .Context
+	mov eax, [es:esi + Context_type]
+	btr eax, 31
+	cmp eax, VGA_TEXT_MODE_CONTEXT
+	jne .Error2
 
 	mov al, .Y
 	mov dl, .X
@@ -605,7 +727,7 @@ Function_Write_text_line:
 	push eax
 	mov edx, eax
 	add eax, edi
-	cmp ax, [ds:esi + Text_mode_context_size]
+	cmp ax, [es:esi + Text_mode_context_size]
 	ja .Error4
 
 	mov ebx, .Src
@@ -615,7 +737,7 @@ Function_Write_text_line:
 	xor edx, edx
 	.Loop1:
 		mov al, [ds:ebx + edx]
-		mov [ds:esi + edx * 2], ax
+		mov [es:esi + edx * 2], ax
 		inc edx
 		cmp edx, edi
 		jb .Loop1
@@ -639,6 +761,9 @@ Function_Write_text_line:
 	xor eax, eax
 
 	.Return:
+	invoke ISystem, ISystem.Set_ES_space
+	add esp, 4
+
 	pop edi
 	pop esi
 	pop edx
@@ -678,28 +803,28 @@ Function_Clear_text_screen:	; Function 13
 	push edx
 	push esi
 
-	mov ecx, .Context
-	call Resolve_context_handle
-	test al, al
-	jnz .Error1
+	mov esi, [fs:IVideo]
+	push esi
+	invoke ISystem, ISystem.Set_DS_space
 
-	mov eax, [ds:esi + Context_type]
+	mov ecx, .Context
+
+	mov eax, [ds:ecx + Context_type]
 	btr eax, 31
 	cmp eax, VGA_TEXT_MODE_CONTEXT
 	jne .Error2
 
-	movzx eax, word [ds:esi + Text_mode_context_width]
+	movzx eax, word [ds:ecx + Text_mode_context_width]
 	mul ah
 	mov edx, eax
 
 	xor eax, eax
 	.Loop1:
-	mov [ds:esi + Text_mode_context_buffer + eax * 2], word $0F00
+	mov [ds:ecx + Text_mode_context_buffer + eax * 2], word $0F00
 	inc eax
 	cmp eax, edx
 	jb .Loop1
 
-	mov esi, [fs:IVideo]
 	cmp ecx, [fs:esi + Var.Active_context]
 	jne .Finish
 
@@ -713,6 +838,8 @@ Function_Clear_text_screen:	; Function 13
 	xor eax, eax
 
 	.Return:
+	invoke ISystem, ISystem.Set_DS_space
+
 	pop esi
 	pop edx
 	pop ecx
@@ -720,9 +847,6 @@ Function_Clear_text_screen:	; Function 13
 	pop ebp
 	ret
 
-	.Error1:
-	mov eax, INVALID_CONTEXT_HANDLE
-	jmp .Return
 	.Error2:
 	mov eax, NOT_TEXT_MODE_CONTEXT
 	jmp .Return
@@ -769,12 +893,13 @@ Function_Set_text_cursor:	; Function 14
 	push edx
 	push esi
 
-	mov ecx, .Context
-	call Resolve_context_handle
-	test al, al
-	jnz .Error1
+	mov esi, [fs:IVideo]
+	push esi
+	invoke ISystem, ISystem.Set_DS_space
 
-	mov eax, [ds:esi + Context_type]
+	mov ecx, .Context
+
+	mov eax, [ds:ecx + Context_type]
 	btr eax, 31
 	cmp eax, VGA_TEXT_MODE_CONTEXT
 	jne .Error2
@@ -785,8 +910,7 @@ Function_Set_text_cursor:	; Function 14
 	bt eax, 31
 	jc .Error3
 
-	mov [ds:esi + Text_mode_context_cursor], ax
-	mov esi, [fs:IVideo]
+	mov [ds:ecx + Text_mode_context_cursor], ax
 	cmp ecx, [fs:esi + Var.Active_context]
 	jne .Finish
 
@@ -796,6 +920,9 @@ Function_Set_text_cursor:	; Function 14
 	xor eax, eax
 
 	.Return:
+	invoke ISystem, ISystem.Set_DS_space
+	add esp, 4
+
 	pop esi
 	pop edx
 	pop ecx
@@ -803,9 +930,6 @@ Function_Set_text_cursor:	; Function 14
 	pop ebp
 	ret
 
-	.Error1:
-	mov eax, INVALID_CONTEXT_HANDLE
-	jmp .Return
 	.Error2:
 	mov eax, NOT_TEXT_MODE_CONTEXT
 	jmp .Return
@@ -821,3 +945,4 @@ Var:
 	.Cursor dw 0
 	.Flag dw 0
 	.Active_context dd 0
+	.Allocator1 dd 0

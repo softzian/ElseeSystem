@@ -18,6 +18,12 @@ macro invoke2 i, x
 	call dword [fs:i + 9 + x]
 }
 
+macro invoke3 i, x
+{
+	mov eax, i
+	call dword [fs:eax + 9 + x]
+}
+
 macro Init_module x
 {
 	call x
@@ -97,17 +103,21 @@ ISystem.Get_module_thread_table = 48
 ISystem.Modify_GDT_entry = 52
 ISystem.Save_GDT_entry = 56
 ISystem.Load_GDT_entry = 60
-;
 ISystem.Add_address_space = 64
 ISystem.Get_address_space = 68
-ISystem.Set_address_space = 72
+ISystem.Set_DS_space = 72
+ISystem.Set_ES_space = 76
+ISystem.Find_module = 80
+;
+ISystem.Install_ISR = 84
 
 IInterrupt = $100004
-IInterrupt.Install_ISR = 0
-IInterrupt.Init_PIC = 4
+IInterrupt.Install_IRQ_handler = 0
+IInterrupt.Install_IRQ_direct_handler = 4
 IInterrupt.Mask_all_IRQ = 8
 IInterrupt.Enable_IRQ = 12
-IInterrupt.Send_EOI = 16
+IInterrupt.Disable_IRQ = 16
+IInterrupt.Send_EOI = 20
 
 IThread = $100008
 IThread.New_Thread = 0
@@ -142,9 +152,9 @@ IHandle.Request_handle = IHandle + 12
 IHandle.Resolve_handle = IHandle + 16
 IHandle.Release_handle = IHandle + 20
 
-INetwork = $100C00
-INetwork.Add_adapter = INetwork + 4
-INetwork.Transmit = INetwork + 8
+INetwork = $100018
+INetwork.Add_adapter = 0
+INetwork.Transmit = 4
 
 IConsole = $100E00
 IConsole.Alloc_console = IConsole + 4

@@ -46,6 +46,7 @@ Error_Code:
 	INVALID_GDT_ENTRY = -6
 	NOT_EXISTED_ADDRESS_SPACE = -7
 	CANNOT_ACCESS_ADDRESS_SPACE = -8
+	NOT_FOUND = -9
 
 use32
 
@@ -95,7 +96,12 @@ Interface:
 
 	dd Function_Add_address_space
 	dd Function_Get_address_space
-	dd Function_Set_address_space
+	dd Function_Set_DS_space
+	dd Function_Set_ES_space
+
+	dd Function_Find_module
+
+	dd Function_Install_ISR
 Header:
 
 Function_Init:
@@ -111,7 +117,7 @@ Function_Init:
 	.Loop:
 		add [fs:esi + eax], ebx
 		add eax, 4
-		cmp eax, 4 * 19
+		cmp eax, 4 * 22
 		jb .Loop
 
 	mov esi, Module_Table
@@ -121,6 +127,17 @@ Function_Init:
 		add eax, 4
 		cmp eax, SizeOf_Module_Table
 		jb .Loop2
+
+	mov esi, $7000
+	xor eax, eax
+	.Loop3:
+		mov [fs:esi + eax], dword $80000
+		mov [fs:esi + eax + 4], dword $E00
+		add eax, 8
+		cmp eax, $800
+		jb .Loop3
+
+	lidt [fs:ebx + IDTR]
 
 	mov [gs:ebp], dword 2
 	mov [gs:ebp + 4], dword 0
@@ -137,7 +154,7 @@ Function_Init:
 include 'System_p1.inc' ; Function 1 to 4
 include 'System_p2.inc' ; Function 5 to 8
 
-Function_Copy_code_to_data:	; Function 12
+Function_Copy_code_to_data:	; Function 9
 	.Src equ dword [gs:ebp - 12]	; Src : Address
 	.Dst equ dword [gs:ebp - 8]	; Dst : Address
 	.Count equ dword [gs:ebp - 4]	; Count : Cardinal
@@ -170,7 +187,7 @@ Function_Copy_code_to_data:	; Function 12
 	restore .Dst
 	restore .Count
 
-Function_Copy_data_to_code:	; Function 13
+Function_Copy_data_to_code:	; Function 10
 	.Src equ dword [gs:ebp - 12]	; Src : Address
 	.Dst equ dword [gs:ebp - 8]	; Dst : Address
 	.Count equ dword [gs:ebp - 4]	; Count : Cardinal
@@ -203,4 +220,37 @@ Function_Copy_data_to_code:	; Function 13
 	restore .Dst
 	restore .Count
 
-include 'System_p3.inc' ; Function
+include 'System_p3.inc' ; Function 11 to 21
+
+Function_Install_ISR: ; Function 22
+	.INum equ byte [gs:ebp - 5]
+	.ISR_Entry equ dword [gs:ebp - 4]
+
+	push ebp
+	add ebp, 5
+	push ebx
+
+	mov ebx, $7000
+	xor eax, eax
+	mov al, .INum
+	shl eax, 3
+	add ebx, eax
+
+	mov eax, .ISR_Entry
+	mov [fs:ebx], ax
+	mov byte [fs:ebx + 5], 10001110b
+	shr eax, 16
+	mov [fs:ebx + 6], ax
+
+	xor eax, eax
+	pop ebx
+
+	pop ebp
+	ret
+
+	restore .INum
+	restore .ISR_Entry
+
+IDTR:
+	.Limit dw 2047
+	.Base dd $7000

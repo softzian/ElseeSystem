@@ -20,79 +20,49 @@ PXE_Loader:
 	call Procedure_PXE_Start
 
 	push Var.System_Module
-	push dword $10000
+	push dword $20000
 	call Function_Download_File
 	test ax, ax
 	jnz Abort
 
 	push Var.Video_Module
-	push dword $11000
+	push dword $21000
 	call Function_Download_File
 	test ax, ax
 	jnz Abort
 
-	;push Var.Utility_Module
-	;push dword $12000
-	;call Function_Download_File
-	;test ax, ax
-	;jnz Abort
-
 	push Var.Interrupt_Module
-	push dword $13000
+	push dword $22000
 	call Function_Download_File
 	test ax, ax
 	jnz Abort
 
 	push Var.Thread_Module
-	push dword $14000
+	push dword $23000
 	call Function_Download_File
 	test ax, ax
 	jnz Abort
-
-	push Var.Keyboard_Module
-	push dword $15000
-	call Function_Download_File
-	test ax, ax
-	jnz Abort
-
-	;push Var.Console_Module
-	;push dword $16000
-	;call Function_Download_File
-	;test ax, ax
-	;jnz Abort
-
-	;push Var.Convert_Module
-	;push dword $17000
-	;call Function_Download_File
-	;test ax, ax
-	;jnz Abort
-
-	;push Var.Handle_Module
-	;push dword $18000
-	;call Function_Download_File
-	;test ax, ax
-	;jnz Abort
-
-	;push Var.Editor_Module
-	;push dword $19000
-	;call Function_Download_File
-	;test ax, ax
-	;jnz Abort
 
 	push Var.Data_Module
-	push dword $30000
+	push dword $24000
 	call Function_Download_File
 	test ax, ax
 	jnz Abort
 
 	push Var.Network_Module
-	push dword $31000
+	push dword $25000
 	call Function_Download_File
 	test ax, ax
 	jnz Abort
 
-	push Var.RTL8139_Module
-	push dword $32000
+	;push Var.RTL8139_Module
+	;push dword $32000
+	;call Function_Download_File
+	;test ax, ax
+	;jnz Abort
+
+	push Var.Am79C970_Module
+	push dword $27000
 	call Function_Download_File
 	test ax, ax
 	jnz Abort
@@ -127,12 +97,11 @@ Var:
 	.Data_Module db 8,0,'Data.bin'
 	.Network_Module db 11,0,'Network.bin'
 	.RTL8139_Module db 11,0,'RTL8139.bin'
+	.Am79C970_Module db 13,0,'Am79C970A.bin'
 
 	.Text db 7,0,'Success'
 	.Text2 db 'Hello World'
 	.UTF32_Str dd 'H','e','l','l','o',' ','W','o','r','l','d'
-	.Console dd 0
-	.Console2 dd 0
 
 Halt:
 	hlt
@@ -201,43 +170,57 @@ GDT:
 		db 0
 	.gdt_data:	; 3 - DS
 		dw $1
-		dw $4000
-		db $20
+		dw $2000
+		db $1
 		db 10010010b
 		db 11000000b
 		db 0
-	.gdt_stack1:	; 4 - SS
+	.gdt_data2:	; 4 - ES
+		dw $1
+		dw $2000
+		db $1
+		db 10010010b
+		db 11000000b
+		db 0
+	.gdt_stack1:	; 5 - SS
 		dw $FFFE
-		dw $5000
-		db 2
+		dw $1000
+		db $1
 		db 10010110b
 		db 11001111b
 		db 0
-	.gdt_stack2:	; 5 - GS
-		dw 0
-		dw $0000
-		db 2
+	.gdt_stack2:	; 6 - GS
+		dw $0
+		dw $1000
+		db $1
 		db 10010010b
 		db 11000000b
 		db 0
-	.gdt_data2:	 ; 6 - ES
-		dw $1
-		dw $4000
-		db $20
-		db 10010010b
-		db 11000000b
-		db 0
-	.gdt_data3:	 ; 7 - DS2
+	.gdt_invalid_data:	; 7 - Invalid DS, ES
 		dw $0000
 		dw $F000
 		db $0
 		db 10010010b
 		db 11000000b
 		db 0
-	.gdt_stack3:	; 8 - GS2
-		dw 0
-		dw $E000
+	.gdt_data3:	; 8 - DS2
+		dw $1
+		dw $2000
+		db $1
+		db 10010010b
+		db 11000000b
 		db 0
+	.gdt_stack3:	; 9 - SS2
+		dw $FFFE
+		dw $1000
+		db $1
+		db 10010110b
+		db 11001111b
+		db 0
+	.gdt_stack4:	; 10 - GS2
+		dw $0
+		dw $1000
+		db $1
 		db 10010010b
 		db 11000000b
 		db 0
@@ -256,11 +239,11 @@ Begin:
 	mov ds, ax
 	mov es, ax
 
-	mov ax, 4 * 8
+	mov ax, 5 * 8
 	mov ss, ax
 	mov esp, $FFFFFFE0
 
-	mov ax, 5 * 8
+	mov ax, 6 * 8
 	mov gs, ax
 	mov ebp, 16
 
@@ -276,32 +259,34 @@ Begin:
 	jmp Halt32
 
 Main_thread:
+	jmp Halt32
 	mov [gs:ebp], dword $300000
 	mov [gs:ebp + 4], dword 0
 	invoke ISystem, ISystem.Add_address_space
 
 	mov ecx, $7000
 	xor edx, edx
-	invoke ISystem, ISystem.Set_address_space
+	invoke ISystem, ISystem.Set_DS_space
 
 	mov [ds:0], dword $19932012
 	mov eax, [fs:$300000]
 	Write_register eax
-	cli
 
-;        mov [gs:ebp], dword Packet
-;        mov [gs:ebp + 4], dword $FFFF1000
-;        mov [gs:ebp + 8], dword 11
-;        invoke ISystem.Copy_code_to_data
-;
-;        mov [gs:ebp], dword 1
-;        mov [gs:ebp + 4], dword $FFFFFFFF
-;        mov [gs:ebp + 8], word $FFFF
-;        mov [gs:ebp + 10], dword $FFFF1000
-;        mov [gs:ebp + 14], word 11
-;        mov [gs:ebp + 16], word $9
-;        invoke INetwork.Transmit
-	;jmp dword $19000
+	xor ecx, ecx
+	.Loop:
+		mov al, [fs:Packet + ecx]
+		mov [ds:ecx], al
+		inc cl
+		cmp cl, 11
+		jb .Loop
+
+	mov [gs:ebp], dword 1
+	mov [gs:ebp + 4], dword $FFFFFFFF
+	mov [gs:ebp + 8], word $FFFF
+	mov [gs:ebp + 10], dword $0
+	mov [gs:ebp + 14], word 11
+	mov [gs:ebp + 16], word $9
+	invoke INetwork, INetwork.Transmit
 
 Halt32:
 	hlt

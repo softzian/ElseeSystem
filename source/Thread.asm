@@ -28,11 +28,14 @@ use32
 ;       End
 
 IThread = $100008
-; Function 1: New_Thread (StartPoint : Address) : Thread_handle_type
-; Function 2: Start (ThreadIdx : Thread_handle_type)
+; Function 1: New_Thread (StartPoint : Address) : Thread_idx
+; Function 2: Start (ThreadIdx : Card32)
 ; Function 3: Yield
 ; Function 4: Block_self
-; Function 5: Block (ThreadIdx : Thread_handle_type)
+; Function 5: Block (ThreadIdx : Card32)
+
+; Function 6: Disable_thread_switch
+; Function 7: Enable_thread_switch
 
 Const:
 	SizeOf_Thread_entry = 64
@@ -90,9 +93,9 @@ Function_Init:
 
 	; Install ISR for IRQ 0
 	lea eax, [ebx + Procedure_IRQ0]
-	mov [gs:ebp], byte $20
+	mov [gs:ebp], byte 0
 	mov [gs:ebp + 1], eax
-	invoke IInterrupt, IInterrupt.Install_ISR
+	invoke IInterrupt, IInterrupt.Install_IRQ_direct_handler
 
 	mov [gs:ebp], dword 5
 	mov [gs:ebp + 4], dword 0
@@ -385,6 +388,17 @@ Function_Block_self:	; Function 4
 	mov [gs:ebp + 4], dword Blocked
 	jmp Set_thread_state
 
+Function_Disable_thread_switch: ; Function 6
+	push ebx
+	call Lock_Thread_module
+	pop ebx
+	ret
+
+Function_Enable_thread_switch: ; Function 7
+	mov eax, [fs:IThread]
+	btr dword [fs:eax + Var.Lock], 0
+	ret
+
 Procedure_Switch_Context:
 	push 0
 	pushf
@@ -420,12 +434,12 @@ Procedure_Switch_Context:
 	mov [fs:esi + ES_space], eax
 
 	.Save_SS_and_GS:
-	mov edx, 4
+	mov edx, 5
 	invoke ISystem, ISystem.Save_GDT_entry
 	mov [fs:esi + SS_entry + 4], ebx
 	mov [fs:esi + SS_entry], ecx
 
-	mov edx, 5
+	mov edx, 6
 	invoke ISystem, ISystem.Save_GDT_entry
 	mov [fs:esi + GS_entry + 4], ebx
 	mov [fs:esi + GS_entry], ecx
@@ -454,28 +468,28 @@ Procedure_Switch_Context:
 	mov ebx, [fs:IThread]
 	mov [fs:ebx + Var.Active_thread], edx
 
-	mov ecx, [fs:esi + DS_space]
-	xor edx, edx
-	invoke ISystem, ISystem.Set_address_space
+	push dword [fs:esi + DS_space]
+	invoke ISystem, ISystem.Set_DS_space
+	add esp, 4
 
-	mov ecx, [fs:esi + ES_space]
-	mov edx, 1
-	invoke ISystem, ISystem.Set_address_space
+	push dword [fs:esi + ES_space]
+	invoke ISystem, ISystem.Set_ES_space
+	add esp, 4
 
 	.Load_SS_and_GS:
-	mov edx, 4
+	mov edx, 5
 	mov ebx, [fs:esi + SS_entry + 4]
 	mov ecx, [fs:esi + SS_entry]
 	invoke ISystem, ISystem.Load_GDT_entry
 
-	mov edx, 5
+	mov edx, 6
 	mov ebx, [fs:esi + GS_entry + 4]
 	mov ecx, [fs:esi + GS_entry]
 	invoke ISystem, ISystem.Load_GDT_entry
 
-	mov dx, $8 * 5
+	mov dx, $8 * 6
 	mov gs, dx
-	mov dx, $8 * 4
+	mov dx, $8 * 5
 	mov ss, dx
 	mov esp, [fs:esi + _ESP]
 

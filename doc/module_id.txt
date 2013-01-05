@@ -7,3 +7,4 @@ Data: 6
 Network: 7
 
 RTL8139
+Allocator 1 0000 0001

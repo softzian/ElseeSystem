@@ -1,4 +1,4 @@
-; RTL8139.asm - RTL8139 Driver Module
+; Am79C970A.asm - Am79C970A Driver Module
 ; Written in 2012 by Congdm
 ;
 ; To the extent possible under law, the author(s) have dedicated
@@ -22,16 +22,16 @@ dd Header
 Interface:
 	dd Function_Transmit
 Header:
-	.Driver_id dd $10EC8139
+	.Driver_id dd $10222000
 	dd $1
 	dq $0
 
 Var:
 	.Data_space dd 0
-	.Adapter_desc dd 0
 	.Adapter_port dd 0
-	.Adapter_rbuff dd 0
-	.Adapter_tbuff dd 0
+	.Adapter_IRQ db 0
+	.Adapter_init_block dd 0
+	.Adapter_PCI_address dd 0
 
 Function_Init:
 	push ebx
@@ -53,7 +53,7 @@ Function_Init:
 	mov [fs:ebx + Get_module_address.Imm], ebx
 
 	; Register module
-	mov [gs:ebp], dword $10EC8139
+	mov [gs:ebp], dword $10222000
 	mov [gs:ebp + 4], dword 1
 	mov [gs:ebp + 8], dword 0
 	mov [gs:ebp + 12], dword 0
@@ -76,21 +76,20 @@ Function_Init:
 	mov [fs:ebx + Var.Data_space], esi
 
 	push ebx
-	call Search_RTL8139
-	call PCI_Config_RTL8139
-	call Start_RTL8139
-	pop ebx
+	invoke ISystem, ISystem.Set_DS_space
 
-	mov [fs:ebx + Var.Adapter_port], dword RTL_Port
+	call Search_Am79C970A
+	call PCI_Config_Am79C970A
+	call Start_Am79C970A
 
-	mov [fs:ebx + Var.Adapter_rbuff], esi
-	mov [fs:ebx + Var.Adapter_desc], dword 0
-	add esi, $3000
-	mov [fs:ebx + Var.Adapter_tbuff], esi
+	mov [fs:ebx + Var.Adapter_port], dword Port
 
 	mov [gs:ebp], ebx
 	mov [gs:ebp + 4], dword 1
 	invoke INetwork, INetwork.Add_adapter
+
+	invoke ISystem, ISystem.Set_DS_space
+	add esp, 4
 
 	pop edi
 	pop esi
@@ -124,58 +123,7 @@ Function_Transmit:	; Function 3
 	push ebx
 	invoke ISystem, ISystem.Set_ES_space
 
-	; TSAD
-	mov edx, [fs:ebx + Var.Adapter_port]
-	mov eax, [fs:ebx + Var.Adapter_desc]
-	shl al, 2
-	add al, $20
-	add edx, eax
-	mov eax, [fs:ebx + Var.Adapter_tbuff]
-	out dx, eax
 
-	; Dest MAC addr
-	mov eax, .Dest_lo4
-	mov [es:$3000], eax
-	mov ax, .Dest_hi2
-	mov [es:$3004], ax
-
-	; Src MAC addr
-	push edx
-	mov edx, [fs:ebx + Var.Adapter_port]
-	in eax, dx
-	mov [es:$3006], eax
-	add edx, 2
-	in eax, dx
-	mov [es:$3008], eax
-	pop edx
-
-	; Ethertype
-	mov ax, .Protocol
-	mov [es:$300C], ax
-
-	movzx ecx, .Size
-	mov esi, .Payload
-	mov edi, $300E
-	rep movsb
-
-	; TDS
-	movzx eax, .Size
-	sub edx, $10
-	add eax, 14
-	cmp eax, 60
-	jae .j1
-	mov eax, 60
-	.j1:
-	btr eax, 13
-	bts eax, 16
-	out dx, eax
-
-	mov eax, [fs:ebx + Var.Adapter_desc]
-	inc al
-	cmp al, 4
-	jb .j2
-	xor al, al
-	.j2: mov [fs:ebx + Var.Adapter_desc], eax
 
 	invoke ISystem, ISystem.Set_ES_space
 	add esp, 4
@@ -196,7 +144,7 @@ Function_Transmit:	; Function 3
 	restore .AdapterId
 	restore .Driver
 
-RTL_Port = $4000
+Port = $6000
 
 macro Choose_PCI_Reg
 {
@@ -214,13 +162,13 @@ macro Write_PCI_Reg
 	out dx, eax
 }
 
-Search_RTL8139:
+Search_Am79C970A:
 	mov ecx, $80000000
 	.Loop:
 	mov eax, ecx
 	Choose_PCI_Reg
 	Read_PCI_Reg
-	cmp eax, $813910EC
+	cmp eax, $20001022
 	je .Found
 
 	add ecx, $800
@@ -229,20 +177,23 @@ Search_RTL8139:
 	jmp .Loop
 
 	.Found:
+	mov [fs:ebx + Var.Adapter_PCI_address], ecx
 
 	.Return:
 	ret
 
 	.Not_found:
+	mov [fs:$B8000], byte '!'
+	mov [fs:$B8001], byte 1010b
 	cli
 	hlt
 
-PCI_Config_RTL8139:
+PCI_Config_Am79C970A:
 	; IOAR
 	lea eax, [ecx + 4 * 4]
 	Choose_PCI_Reg
 	Read_PCI_Reg
-	mov eax, RTL_Port + 1
+	mov eax, Port + 1
 	Write_PCI_Reg
 
 	; BMAR
@@ -264,74 +215,102 @@ PCI_Config_RTL8139:
 	lea eax, [ecx + $F * 4]
 	Choose_PCI_Reg
 	Read_PCI_Reg
-
+	mov [fs:ebx + Var.Adapter_IRQ], al
 	ret
 
-Start_RTL8139:
-	; Command
-	mov dx, RTL_Port + $37
+Start_Am79C970A:
+	; Reset
+	mov edx, Port + $10
 	xor eax, eax
-	in al, dx
-	bts eax, 4
-	out dx, al
+	out dx, eax
 
-	.Loop:
-	in al, dx
-	mov ebx, eax
-	bt ebx, 4
-	jnz .Loop
+	mov edx, Port + $18
+	in eax, dx
 
-	; 93C46
-	mov dx, RTL_Port + $50
+	mov edx, Port + $10
+	out dx, eax
+
+	; CSR0 - Stop
+	mov edx, Port + $14
 	xor eax, eax
-	mov al, 11000000b
-	out dx, al
+	out dx, eax
 
-	; CONFIG1
-	mov dx, RTL_Port + $52
-	in al, dx
-	btr eax, 4
-	btr eax, 0
-	bts eax, 5
-	out dx, al
+	mov edx, Port + $10
+	mov eax, 4
+	out dx, eax
 
-	; 93C46
-	mov dx, RTL_Port + $50
+	; BCR20
+	mov edx, Port + $14
+	mov eax, 20
+	out dx, eax
+
+	mov edx, Port + $1C
+	mov eax, $103
+	out dx, eax
+
+	; CSR 1 & CSR 2 - Initialization Block Address
+	mov edx, Port + $14
+	mov eax, 1
+	out dx, eax
+
+	mov edx, Port + $10
+	mov eax, esi
+	and eax, $FFFF
+	out dx, eax
+
+	mov edx, Port + $14
+	mov eax, 2
+	out dx, eax
+
+	mov edx, Port + $10
+	mov eax, esi
+	shr eax, 16
+	out dx, eax
+
+	; Create Initialization Block
+	mov [fs:ebx + Var.Adapter_init_block], dword 0
+	mov [ds:0], dword $80
+	mov [ds:4], dword $29056100
+	mov [ds:8], dword $000C
+	mov [ds:$C], dword 0
+	mov [ds:$10], dword 0
+	mov [ds:$14], esi
+	add [ds:$14], dword $20
+	mov [ds:$18], esi
+	add [ds:$18], dword $30
+
+	; Receive descriptor
+	mov [ds:$20], dword $0
+	mov [ds:$24], dword $300F001
+	mov [ds:$28], esi
+	add [ds:$28], dword $1000
+	mov [ds:$2C], dword 0
+
+	; Transmit descriptor
+	mov [ds:$30], dword $0
+	mov [ds:$34], dword $300F000
+	mov [ds:$38], esi
+	add [ds:$38], dword $2000
+	mov [ds:$3C], dword 0
+
+	; CSR0 - Init
+	mov edx, Port + $14
 	xor eax, eax
-	out dx, al
+	out dx, eax
 
-	; IMR
-	mov dx, RTL_Port + $3C
-	mov ax, $FFFF
-	out dx, ax
+	mov edx, Port + $10
+	mov eax, 11b
+	out dx, eax
 
-	mov [gs:ebp], byte $2B
-	mov eax, [ss:_ModuleIdx]
-	add eax, Function_RTL8139_ISR
+	lea eax, [ebx + Procedure_IRQ_Handler]
 	mov [gs:ebp + 1], eax
-	invoke IInterrupt, IInterrupt.Install_ISR
-
-	mov [gs:ebp], byte $B
-	invoke IInterrupt, IInterrupt.Enable_IRQ
-
-	; Command
-	mov dx, RTL_Port + $37
-	mov al, 100b
-	out dx, al
-	in al, dx
-
-	; RBSTART
-	;mov dx, RTL_Port + $30
-	;out dx, eax
-
-	; RCR
-	;mov dx, RTL_Port + $44
-	;mov eax, $F
-	;out dx, eax
+	mov al, [fs:ebx + Var.Adapter_IRQ]
+	mov [gs:ebp], al
+	invoke IInterrupt, IInterrupt.Install_IRQ_handler
 
 	ret
 
-Function_RTL8139_ISR:
+Procedure_IRQ_Handler:
 	pusha
 	push gs
 
@@ -340,7 +319,7 @@ Function_RTL8139_ISR:
 	mov ebp, 16
 
 	xor eax, eax
-	mov dx, RTL_Port + $3E
+	mov dx, Port + $3E
 	in ax, dx
 	out dx, ax
 
@@ -348,71 +327,4 @@ Function_RTL8139_ISR:
 
 	pop gs
 	popa
-	iret
-
-Calculate_IP_Checksum:
-	push eax
-	push ecx
-	push edx
-
-	xor eax, eax
-	xor ecx, ecx
-	.Loop1:
-	mov dx, [fs:ebx + ecx * 2]
-	xchg dl, dh
-	add ax, dx
-	adc ax, 0
-	inc ecx
-	cmp ecx, 10
-	jb .Loop1
-
-	xchg al, ah
-	not ax
-	mov [fs:ebx + 12], ax
-
-	xor eax, eax
-	mov ecx, 7
-	.Loop2:
-	mov dx, [fs:ebx + 20 + ecx * 2]
-	xchg dl, dh
-	add ax, dx
-	adc ax, 0
-	loop .Loop2
-	mov dx, [fs:ebx + 20]
-	xchg dl, dh
-	add ax, dx
-	adc ax, 0
-	xchg al, ah
-	not ax
-	mov [fs:ebx + 20 + 2], ax
-
-	pop edx
-	pop ecx
-	pop eax
-
 	ret
-
-Ethernet_Frame:
-	.MAC_Destination db $00,$A1,$B0,$00,$02,$D4
-	.MAC_Source db $FF,$FF,$FF,$FF,$FF,$FF
-	.Ethertype db $8, $00
-IP_Datagram:
-	.Version__IHL db $45
-	.Type_of_Service db 0
-	.Total_Length db $0,20+16
-	.Identification db $19,$93
-	.Flags__Fragment_Offset db $0,$0
-	.Time_to_Live db 32
-	.Protocol db 1
-	.Header_Checksum dw 0
-	.Source_Address db 192,168,100,100
-	.Destination_Address db 192,168,100,40
-ICMP_Load:
-	.Type db 8
-	.Code db 0
-	.Checksum dw 0
-	.Identifier dw 0
-	.Sequence_Number dw 0
-	.Data db 'PingPong'
-Pad:
-	db 10 dup 0

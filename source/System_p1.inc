@@ -27,23 +27,17 @@ Get_lock_0:
 	jmp Get_lock_0
 
 Release_lock_0:
-	mov ebx, [fs:ISystem]
 	btr word [fs:System_data + Data_region_lock], 0
 	ret
 
 Function_Create_Region:  ; Function 1
-	.Start equ dword [gs:ebp - 12]
-	.Limit equ dword [gs:ebp - 8]
-	.Type equ dword [gs:ebp - 4]
+	.Start equ dword [gs:ebp - 8]
+	.Limit equ dword [gs:ebp - 4]
 
 	push ebp
-	add ebp, 12
+	add ebp, 8
 	push ebx
 	push ecx
-
-	mov eax, .Type
-	test eax, eax
-	jnz .Error1
 
 	mov ebx, .Start
 	mov eax, .Limit
@@ -79,17 +73,12 @@ Function_Create_Region:  ; Function 1
 	pop ebp
 	ret
 
-	.Error1:
-	mov eax, SUBINTERFACE_UNAVAILABLE
-	jmp .Return
-
 	.Error2:
 	mov eax, REGION_SIZE_IS_NOT_LARGE_ENOUGH
 	jmp .Return
 
 	restore .Start
 	restore .Limit
-	restore .Type
 
 Function_Allocate:    ; Function 2
 	.Size equ dword [gs:ebp - 4] ; Size : Cardinal
