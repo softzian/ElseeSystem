@@ -13,15 +13,13 @@ include 'include\errcode.inc'
 include 'include\Header.inc'
 use32
 
-INetwork = $100018
-; Function 1: Add_adapter (Driver : Address; AdapterId : Cardinal)
+INetwork = $100030
+; Function 1: Add_adapter (Driver : Address; AdapterId : Cardinal) : Card32
 
-; Function 4: Transmit (Adapter : Cardinal; Dest : MAC_address; Payload : Address; Size : Card16; Protocol : Card16)
-; Function 5: Start_Receiver (Adapter : Handle)
-; Function 6: Stop_Receiver (Adapter : Handle)
+; Function 2: Transmit (Adapter : Card32; Dest : MAC_address; Payload : Address; Size : Card16; Protocol : Card16)
 
-; Function 7: Add_recipient (AdapterIdx : Byte)
-; Function 8: Receive_packet (AdapterIdx : Byte; var Packet : Array of Byte)
+; Function 3: Add_receiver (Adapter : Card32; Protocol : Card16; Buffer : Address)
+; Function 4: Receive_packet (Adapter : Card32; Protocol : Card16; Packet : Address; Size : Card16)
 
 Const:
 	NumOf_Adapters = 32
@@ -38,14 +36,16 @@ Const:
 Error_Code:
 	ADAPTER_TABLE_PROBLEM = -1
 	ADAPTER_NOT_EXISTED = -5
+	RECEIVER_TABLE_FULL = -6
 
 jmp near dword Function_Init
 dd Header
 Interface:
 	dd Function_Add_adapter
 	dd Function_Transmit
-	;dd Function_Start_Receiver
-	;dd Function_Stop_Receiver
+
+	dd Function_Add_receiver
+	dd Function_Receive_packet
 Header:
 
 Function_Init:
@@ -57,12 +57,13 @@ Function_Init:
 	mov ebx, eax
 	lea esi, [eax + Interface]
 	mov [fs:INetwork], eax
+	mov [fs:INetwork + 4], esi
 
 	xor eax, eax
 	.Loop:
 		add [fs:esi + eax], ebx
 		add eax, 4
-		cmp eax, 4 * 2
+		cmp eax, 4 * 4
 		jb .Loop
 
 	mov [gs:ebp], dword 0
@@ -70,16 +71,16 @@ Function_Init:
 	mov [gs:ebp + 8], dword 0
 	mov [gs:ebp + 12], dword 6
 	mov [gs:ebp + 16], dword ebx
-	invoke ISystem, ISystem.Register_Module
+	invoke ISystem2, ISystem2.Register_Module
 
-	mov [gs:ebp], dword $1000
-	invoke ISystem, ISystem.Allocate
+	mov [gs:ebp], dword $2000
+	invoke ISystem2, ISystem2.Allocate
 
 	mov esi, [ss:_Result]
 
 	mov [gs:ebp], esi
-	mov [gs:ebp + 4], dword 0
-	invoke ISystem, ISystem.Add_address_space
+	mov [gs:ebp + 4], dword 1
+	invoke ISystem2, ISystem2.Add_address_space
 
 	mov edi, [ss:_Result]
 	push edi
@@ -91,11 +92,16 @@ Function_Init:
 	mov [gs:ebp + 8], dword 32 * NumOf_Adapters
 	invoke IData, IData.Create_table
 
+	; Create receiver list
+	xor eax, eax
+	.Loop2:
+		mov [ds:$1000 + eax], byte 0
+		inc eax
+		cmp eax, $A00
+		jb .Loop2
+
 	invoke ISystem, ISystem.Set_DS_space
 	add esp, 4
-
-	test eax, eax
-	; Error handling here
 
 	pop edx
 	pop esi
@@ -203,6 +209,124 @@ Function_Transmit:	; Function 3
 	restore .Payload
 	restore .Size
 	restore .Protocol
+
+Function_Add_receiver:
+	.Adapter equ dword [gs:ebp - 10] ; Adapter : Card32
+	.Protocol equ word [gs:ebp - 6] ; Protocol : Card16
+	.Buffer equ dword [gs:ebp - 4] ; Buffer : Address
+
+	push ebp
+	add ebp, 10
+
+	push ecx
+	push esi
+	push edi
+
+	push dword [fs:INetwork]
+	invoke ISystem, ISystem.Set_DS_space
+
+	xor ecx, ecx
+	.Loop1:
+		cmp [ds:$1000 + ecx], dword 0
+		je .Found
+		add ecx, 10
+		cmp ecx, $A00
+		jb .Loop1
+		jmp .Error1
+
+	.Found:
+	mov eax, .Adapter
+	mov [ds:$1000 + ecx], eax
+	mov ax, .Protocol
+	mov [ds:$1000 + ecx + 4], ax
+	mov eax, .Buffer
+	mov [ds:$1000 + ecx + 6], eax
+
+	invoke ISystem, ISystem.Set_DS_space
+	add esp, 4
+
+	.Return:
+	pop edi
+	pop esi
+	pop ecx
+
+	pop ebp
+	ret
+
+	.Error1:
+	invoke ISystem, ISystem.Set_DS_space
+	add esp, 4
+
+	mov eax, RECEIVER_TABLE_FULL
+	jmp .Return
+
+	restore .Adapter
+	restore .Protocol
+	restore .Buffer
+
+Function_Receive_packet:
+	; Parameters
+	.Adapter equ dword [gs:ebp - 12] ; Adapter : Card32
+	.Protocol equ word [gs:ebp - 8] ; Protocol : Card16
+	.Packet equ dword [gs:ebp - 6] ; Packet : Address
+	.Size equ word [gs:ebp - 2] ; Size : Card16
+
+	push ebp
+	add ebp, 12
+
+	push ebx
+	push ecx
+	push edx
+	push esi
+	push edi
+
+	push dword [fs:INetwork]
+	invoke ISystem, ISystem.Set_DS_space
+
+	xor ecx, ecx
+	mov esi, .Adapter
+	mov di, .Protocol
+	.Loop1:
+		cmp esi, [ds:$1000 + ecx]
+		jne .Next1
+		cmp di, [ds:$1000 + ecx + 4]
+		jne .Next1
+
+		mov edi, [ds:$1000 + ecx + 6]
+		mov esi, .Packet
+		movzx edx, .Size
+		xor ebx, ebx
+		.Loop2:
+			mov al, [fs:esi + ebx]
+			mov [fs:edi + 4 + ebx], al
+			inc ebx
+			cmp ebx, edx
+			jb .Loop2
+		mov esi, .Adapter
+		mov di, .Protocol
+
+		.Next1:
+		add ecx, 10
+		cmp ecx, $A00
+		jb .Loop1
+
+	invoke ISystem, ISystem.Set_DS_space
+	add esp, 4
+
+	.Return:
+	pop edi
+	pop esi
+	pop edx
+	pop ecx
+	pop ebx
+
+	pop ebp
+	ret
+
+	restore .Adapter
+	restore .Protocol
+	restore .Packet
+	restore .Size
 
 Var:
 	.nAdap dd 0

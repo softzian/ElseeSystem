@@ -61,15 +61,19 @@ ISystem = $100000
 ; Function 7: Deallocate_Code (Ptr : Address)
 ; Function 8: Mark_Code (Start, Limit : Address; Type : Cardinal)
 
-; Function 9: Copy_code_to_data (Src, Dst : Address; Count : Cardinal)
-; Function 10: Copy_data_to_code (Src, Dst : Address; Count : Cardinal)
+; Function 9: Register_Module (Module_id : Card128; Module_address : Address)
+; Function 10: Set_module_thread_table (Module_address in ECX; Thread_table_address in EDI)
+; Function 11: Get_module_thread_table (Module_address in ECX) return to ECX
+; Function 12: Modify_GDT_entry (Entry_index in EDX; Base in EBX; Limit in ECX)
+; Function 13: Save_GDT_entry (Entry_index in EDX) return to EBX and ECX
+; Function 14: Load_GDT_entry (Entry_index in EDX; Entry_content in EBX and ECX)
 
-; Function 11: Register_Module (Module_id : Card128; Module_address : Address)
-; Function 12: Set_module_thread_table (Module_address in ECX; Thread_table_address in EDI)
-; Function 13: Get_module_thread_table (Module_address in ECX) return to ECX
-; Function 14: Modify_GDT_entry (Entry_index in EDX; Base in EBX; Limit in ECX)
-; Function 15: Save_GDT_entry (Entry_index in EDX) return to EBX and ECX
-; Function 16: Load_GDT_entry (Entry_index in EDX; Entry_content in EBX and ECX)
+; Function 15: Add_address_space (Base : Address; Limit : Card32) : Card32
+; Function 16: Set_DS_space (Addr_space : Card32) // parameter pass over SS stack
+; Function 17: Set_ES_space (Addr_space : Card32) // parameter pass over SS stack
+; Function 18: Find_module (Module_id : Card128) : Address
+
+; Function 19: Install_ISR (INum : Byte; ISR_Entry : Address)
 
 jmp near dword Function_Init
 dd Header
@@ -84,9 +88,6 @@ Interface:
 	dd Function_Deallocate_Code
 	dd Function_Mark_Code
 
-	dd Function_Copy_code_to_data
-	dd Function_Copy_data_to_code
-
 	dd Function_Register_Module
 	dd Function_Set_module_thread_table
 	dd Function_Get_module_thread_table
@@ -95,10 +96,8 @@ Interface:
 	dd Function_Load_GDT_entry
 
 	dd Function_Add_address_space
-	dd Function_Get_address_space
 	dd Function_Set_DS_space
 	dd Function_Set_ES_space
-
 	dd Function_Find_module
 
 	dd Function_Install_ISR
@@ -112,12 +111,13 @@ Function_Init:
 	mov ebx, eax
 	lea esi, [eax + Interface]
 	mov [fs:ISystem], eax
+	mov [fs:ISystem + 4], esi
 
 	xor eax, eax
 	.Loop:
 		add [fs:esi + eax], ebx
 		add eax, 4
-		cmp eax, 4 * 22
+		cmp eax, 4 * 19
 		jb .Loop
 
 	mov esi, Module_Table
@@ -153,73 +153,6 @@ Function_Init:
 
 include 'System_p1.inc' ; Function 1 to 4
 include 'System_p2.inc' ; Function 5 to 8
-
-Function_Copy_code_to_data:	; Function 9
-	.Src equ dword [gs:ebp - 12]	; Src : Address
-	.Dst equ dword [gs:ebp - 8]	; Dst : Address
-	.Count equ dword [gs:ebp - 4]	; Count : Cardinal
-
-	push ebp
-	add ebp, 12
-	push ecx
-	push esi
-	push edi
-
-	mov edi, .Dst
-	mov esi, .Src
-	mov ecx, .Count
-
-	.Loop:
-		mov al, [fs:esi]
-		mov [ds:edi], al
-		inc esi
-		inc edi
-		loop .Loop
-
-	.Return:
-	pop edi
-	pop esi
-	pop ecx
-	pop ebp
-	ret
-
-	restore .Src
-	restore .Dst
-	restore .Count
-
-Function_Copy_data_to_code:	; Function 10
-	.Src equ dword [gs:ebp - 12]	; Src : Address
-	.Dst equ dword [gs:ebp - 8]	; Dst : Address
-	.Count equ dword [gs:ebp - 4]	; Count : Cardinal
-
-	push ebp
-	add ebp, 12
-	push ecx
-	push esi
-	push edi
-
-	mov edi, .Dst
-	mov esi, .Src
-	mov ecx, .Count
-
-	.Loop:
-		mov al, [ds:esi]
-		mov [fs:edi], al
-		inc esi
-		inc edi
-		loop .Loop
-
-	.Return:
-	pop edi
-	pop esi
-	pop ecx
-	pop ebp
-	ret
-
-	restore .Src
-	restore .Dst
-	restore .Count
-
 include 'System_p3.inc' ; Function 11 to 21
 
 Function_Install_ISR: ; Function 22

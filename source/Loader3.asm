@@ -43,14 +43,20 @@ PXE_Loader:
 	test ax, ax
 	jnz Abort
 
-	push Var.Data_Module
+	push Var.System2_Module
 	push dword $24000
 	call Function_Download_File
 	test ax, ax
 	jnz Abort
 
-	push Var.Network_Module
+	push Var.Data_Module
 	push dword $25000
+	call Function_Download_File
+	test ax, ax
+	jnz Abort
+
+	push Var.Network_Module
+	push dword $26000
 	call Function_Download_File
 	test ax, ax
 	jnz Abort
@@ -86,14 +92,9 @@ include 'Loader3_p2.inc'
 Var:
 	.Interrupt_Module db 9,0,'8259A.bin'
 	.System_Module db 10,0,'System.bin'
+	.System2_Module db 11,0,'System2.bin'
 	.Video_Module db 7,0,'VGA.bin'
-	.Utility_Module db 11,0,'Utility.bin'
 	.Thread_Module db 10,0,'Thread.bin'
-	.Keyboard_Module db 8,0,'8042.bin'
-	.Console_Module db 11,0,'Console.bin'
-	.Convert_Module db 11,0,'Convert.bin'
-	.Handle_Module db 10,0,'Handle.bin'
-	.Editor_Module db 10,0,'Editor.bin'
 	.Data_Module db 8,0,'Data.bin'
 	.Network_Module db 11,0,'Network.bin'
 	.RTL8139_Module db 11,0,'RTL8139.bin'
@@ -231,6 +232,11 @@ GDT_Desc:
 
 use32
 
+macro Set_Active_Module x
+{
+	mov [ss:_ModuleIdx], dword x
+}
+
 Begin:
 	mov ax, 2 * 8
 	mov fs, ax
@@ -259,33 +265,59 @@ Begin:
 	jmp Halt32
 
 Main_thread:
-	jmp Halt32
-	mov [gs:ebp], dword $300000
-	mov [gs:ebp + 4], dword 0
-	invoke ISystem, ISystem.Add_address_space
+	mov eax, $25000 	; Data
+	Set_Active_Module eax
+	Init_module eax
 
-	mov ecx, $7000
-	xor edx, edx
+	mov eax, $26000 	; Network
+	Set_Active_Module eax
+	Init_module eax
+
+	mov eax, $27000 	; Am79C970
+	Set_Active_Module eax
+	Init_module eax
+
+	Set_Active_Module $7000
+
+	;mov eax, $214000
+	;mov dr0, eax
+	;xor eax, eax
+	;bts eax, 0
+	;bts eax, 1
+	;bts eax, 8
+	;bts eax, 9
+	;bts eax, 16
+	;bts eax, 17
+	;bts eax, 18
+	;bts eax, 19
+	;mov dr7, eax
+
+	; Allocate address space
+	mov [gs:ebp], dword $4000
+	invoke ISystem2, ISystem2.Allocate
+
+	mov [gs:ebp], esi
+	mov [gs:ebp + 4], dword 3
+	invoke ISystem2, ISystem2.Add_address_space
+
+	push dword [ss:_Result]
 	invoke ISystem, ISystem.Set_DS_space
-
-	mov [ds:0], dword $19932012
-	mov eax, [fs:$300000]
-	Write_register eax
+	add esp, 4
 
 	xor ecx, ecx
-	.Loop:
+	.Loop1:
 		mov al, [fs:Packet + ecx]
 		mov [ds:ecx], al
-		inc cl
-		cmp cl, 11
-		jb .Loop
+		inc ecx
+		cmp ecx, 11
+		jb .Loop1
 
 	mov [gs:ebp], dword 1
 	mov [gs:ebp + 4], dword $FFFFFFFF
 	mov [gs:ebp + 8], word $FFFF
-	mov [gs:ebp + 10], dword $0
-	mov [gs:ebp + 14], word 11
-	mov [gs:ebp + 16], word $9
+	mov [gs:ebp + 10], dword 0
+	mov [gs:ebp + 14], word 60
+	mov [gs:ebp + 16], word $0009
 	invoke INetwork, INetwork.Transmit
 
 Halt32:

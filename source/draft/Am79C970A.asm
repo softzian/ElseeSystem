@@ -32,6 +32,7 @@ Var:
 	.Adapter_IRQ db 0
 	.Adapter_init_block dd 0
 	.Adapter_PCI_address dd 0
+	.Lock dd 0
 
 Function_Init:
 	push ebx
@@ -58,17 +59,17 @@ Function_Init:
 	mov [gs:ebp + 8], dword 0
 	mov [gs:ebp + 12], dword 0
 	mov [gs:ebp + 16], ebx
-	invoke ISystem, ISystem.Register_Module
+	invoke ISystem2, ISystem2.Register_Module
 
 	; Allocate address space
 	mov [gs:ebp], dword $4000
-	invoke ISystem, ISystem.Allocate
+	invoke ISystem2, ISystem2.Allocate
 
 	mov esi, [ss:_Result]
 
 	mov [gs:ebp], esi
 	mov [gs:ebp + 4], dword 3
-	invoke ISystem, ISystem.Add_address_space
+	invoke ISystem2, ISystem2.Add_address_space
 
 	test eax, eax
 	; Error handling here
@@ -88,6 +89,9 @@ Function_Init:
 	mov [gs:ebp + 4], dword 1
 	invoke INetwork, INetwork.Add_adapter
 
+	mov eax, [ss:_Result]
+	mov [ds:$44], eax
+
 	invoke ISystem, ISystem.Set_DS_space
 	add esp, 4
 
@@ -102,6 +106,14 @@ Get_module_address:
 	db $B8
 	.Imm dd 0
 	ret
+
+Get_lock:
+	lock bts dword [fs:ebx + Var.Lock], 0
+	jc .Wait
+	ret
+	.Wait:
+	invoke IThread, IThread.Yield
+	jmp Get_lock
 
 Function_Transmit:	; Function 3
 	.AdapterId equ dword [gs:ebp - 18] ; AdapterId : Card32
@@ -120,13 +132,44 @@ Function_Transmit:	; Function 3
 	call Get_module_address
 	mov ebx, eax
 
+	call Get_lock
+
 	push ebx
 	invoke ISystem, ISystem.Set_ES_space
 
+	mov eax, .Dest_lo4
+	mov [es:$2000], eax
+	mov ax, .Dest_hi2
+	mov [es:$2004], ax
+	mov edi, $2006
+	mov edx, Port
+	call Get_adapter_MAC_address
 
+	mov ax, .Protocol
+	mov [es:$200C], ax
+
+	mov esi, .Payload
+	mov edi, $200E
+	movzx ecx, .Size
+	rep movsb
+
+	mov eax, $8300F000
+	movzx ecx, .Size
+	neg ecx
+	and ecx, $FFF
+	add eax, ecx
+
+	mov [es:$34], eax
+
+	mov eax, [ss:_ThreadIdx]
+	mov [es:$40], eax
+	invoke IThread, IThread.Block_self
+	invoke IThread, IThread.Yield
 
 	invoke ISystem, ISystem.Set_ES_space
 	add esp, 4
+
+	btr dword [fs:ebx + Var.Lock], 0
 
 	.Return:
 	pop edi
@@ -212,7 +255,7 @@ PCI_Config_Am79C970A:
 	out dx, ax
 
 	; ILR
-	lea eax, [ecx + $F * 4]
+	lea eax, [ecx + $3C]
 	Choose_PCI_Reg
 	Read_PCI_Reg
 	mov [fs:ebx + Var.Adapter_IRQ], al
@@ -281,7 +324,7 @@ Start_Am79C970A:
 
 	; Receive descriptor
 	mov [ds:$20], dword $0
-	mov [ds:$24], dword $300F001
+	mov [ds:$24], dword $8300F001
 	mov [ds:$28], esi
 	add [ds:$28], dword $1000
 	mov [ds:$2C], dword 0
@@ -293,38 +336,116 @@ Start_Am79C970A:
 	add [ds:$38], dword $2000
 	mov [ds:$3C], dword 0
 
+	lea eax, [ebx + Procedure_IRQ_Handler]
+	mov [gs:ebp + 1], eax
+	mov dl, [fs:ebx + Var.Adapter_IRQ]
+	mov [gs:ebp], dl
+	invoke IInterrupt, IInterrupt.Install_IRQ_handler
+
+	mov [gs:ebp], dl
+	invoke IInterrupt, IInterrupt.Enable_IRQ
+
 	; CSR0 - Init
 	mov edx, Port + $14
 	xor eax, eax
 	out dx, eax
 
 	mov edx, Port + $10
-	mov eax, 11b
+	mov eax, 1000011b
 	out dx, eax
 
-	lea eax, [ebx + Procedure_IRQ_Handler]
-	mov [gs:ebp + 1], eax
-	mov al, [fs:ebx + Var.Adapter_IRQ]
-	mov [gs:ebp], al
-	invoke IInterrupt, IInterrupt.Install_IRQ_handler
+	ret
+
+Get_adapter_MAC_address:
+	add edx, $14
+	mov eax, 12
+	out dx, eax
+
+	sub edx, $4
+	in eax, dx
+
+	mov [es:edi + 5], al
+	mov [es:edi + 4], ah
+
+	add edx, $4
+	mov eax, 13
+	out dx, eax
+
+	sub edx, $4
+	in eax, dx
+
+	mov [es:edi + 3], al
+	mov [es:edi + 2], ah
+
+	add edx, $4
+	mov eax, 14
+	out dx, eax
+
+	sub edx, $4
+	in eax, dx
+
+	mov [es:edi + 1], al
+	mov [es:edi], ah
 
 	ret
+
 
 Procedure_IRQ_Handler:
-	pusha
-	push gs
-
-	mov ax, 8 * 8
-	mov gs, ax
-	mov ebp, 16
-
+	mov edx, Port + $14
 	xor eax, eax
-	mov dx, Port + $3E
-	in ax, dx
-	out dx, ax
+	out dx, eax
 
-	invoke IInterrupt, IInterrupt.Send_EOI
+	mov edx, Port + $10
+	in eax, dx
 
-	pop gs
-	popa
+	bt eax, 7
+	jnc .Return
+
+	bt eax, 15
+	jc .Error_handling
+
+	mov edi, eax
+	Write_register eax
+
+	.Transmit:
+	bt edi, 9
+	jnc .Receive
+
+	call Get_module_address
+	mov eax, [fs:eax + Var.Data_space]
+	mov eax, [fs:eax + $40]
+	mov [gs:ebp], eax
+	invoke IThread, IThread.Start
+
+	.Receive:
+	bt edi, 10
+	jnc .Return
+
+	call Get_module_address
+	mov ebx, [fs:eax + Var.Data_space]
+
+	mov eax, [fs:ebx + $44]
+	mov [gs:ebp], eax
+	mov ax, [fs:ebx + $1000 + 12]
+	mov [gs:ebp + 4], ax
+	lea eax, [ebx + $1000 + 14]
+	mov [gs:ebp + 6], eax
+	mov eax, [fs:ebx + $20]
+	and eax, $FFF
+	mov [gs:ebp + 10], ax
+	invoke INetwork, INetwork.Receive_packet
+
+	mov [fs:ebx + $20], dword 0
+	mov dword [fs:ebx + $24], dword $8300F001
+
+	.Return:
+	mov eax, edi
+	btr eax, 0
+	btr eax, 1
+	out dx, eax
 	ret
+
+	.Error_handling:
+	Write_register eax
+	cli
+	hlt

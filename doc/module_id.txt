@@ -5,6 +5,7 @@ VGA: 3
 Thread: 5
 Data: 6
 Network: 7
+System2: 8
 
 RTL8139
 Allocator 1 0000 0001

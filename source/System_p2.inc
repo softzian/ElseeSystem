@@ -21,7 +21,7 @@ Get_lock_1:
 	jc .Wait
 	ret
 	.Wait:
-	invoke IThread, IThread.Yield
+	pause
 	jmp Get_lock_1
 
 Release_lock_1:

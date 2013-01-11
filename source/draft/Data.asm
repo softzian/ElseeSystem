@@ -12,7 +12,7 @@
 include 'include\Header.inc'
 use32
 
-IData = $100014
+IData = $100028
 ; Function 1: Create_table (Table_address : Address; Entry_size, Num_of_entry : Cardinal)
 
 ; Function 2: Add_table_entry (Table : Address) : Cardinal
@@ -52,6 +52,7 @@ Function_Init:
 	mov ebx, eax
 	lea esi, [eax + Interface]
 	mov [fs:IData], eax
+	mov [fs:IData + 4], esi
 
 	xor eax, eax
 	.Loop:
@@ -65,7 +66,7 @@ Function_Init:
 	mov [gs:ebp + 8], dword 0
 	mov [gs:ebp + 12], dword 5
 	mov [gs:ebp + 16], dword ebx
-	invoke ISystem, ISystem.Register_Module
+	invoke ISystem2, ISystem2.Register_Module
 
 	pop esi
 	pop edi

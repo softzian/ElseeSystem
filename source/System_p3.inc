@@ -37,7 +37,6 @@ Module_thread_table = 20
 Module_address_space_table = 24
 
 ; Macro
-macro Unlock_GDT { btr dword [fs:System_data + _Lock], GDT_lock }
 macro Unlock_Module_table { btr dword [fs:System_data + _Lock], Module_table_lock }
 
 Lock_module_table:
@@ -45,16 +44,8 @@ Lock_module_table:
 	jc .Wait
 	ret
 	.Wait:
-	invoke IThread, IThread.Yield
+	pause
 	jmp Lock_module_table
-
-Lock_GDT:
-	lock bts dword [fs:System_data + _Lock], GDT_lock
-	jc .Wait
-	ret
-	.Wait:
-	invoke IThread, IThread.Yield
-	jmp Lock_GDT
 
 Function_Register_Module:
 	.Module_id_1 equ dword [gs:ebp - 20] ; Module_id : Card128
@@ -68,7 +59,6 @@ Function_Register_Module:
 
 	push ebx
 	push ecx
-	push edx
 
 	mov ecx, .Module_address
 	mov eax, ecx
@@ -81,21 +71,17 @@ Function_Register_Module:
 	jnz .Add_entry
 
 	; Create level 2 table if it is not existed
-	push dword [ss:_ModuleIdx]
-	mov edx, [fs:ISystem]
-	mov [ss:_ModuleIdx],  edx
-
-	mov edx, eax
+	mov eax, [fs:ISystem]
 	mov [gs:ebp], dword SizeOf_Module_Table
+	mov [gs:ebp + 4], eax
 	call Function_Allocate
 
-	pop dword [ss:_ModuleIdx]
-
 	test eax, eax
-	mov eax, edx
 	jnz .Error1
 
 	mov ebx, [ss:_Result]
+	mov eax, ecx
+	shr eax, 20
 	mov [fs:Module_Table + eax], ebx
 
 	xor eax, eax
@@ -122,11 +108,11 @@ Function_Register_Module:
 	xor eax, eax
 	mov [fs:ebx + Module_flag], dword 1
 	mov [fs:ebx + Module_thread_table], eax
+	mov [fs:ebx + Module_address_space_table], eax
 
 	.Return:
 	Unlock_Module_table
 
-	pop edx
 	pop ecx
 	pop ebx
 
@@ -280,17 +266,18 @@ Function_Load_GDT_entry:
 	ret
 
 Function_Add_address_space:
-	.Base equ dword [gs:ebp - 8]
-	.Limit equ dword [gs:ebp - 4]
+	.Module_idx equ dword [gs:ebp - 12] ; Module_idx : Card32
+	.Base equ dword [gs:ebp - 8] ; Base : Address
+	.Limit equ dword [gs:ebp - 4] ; Limit : Card32
 
 	push ebp
-	add ebp, 8
+	add ebp, 12
 	push ebx
 	push ecx
 
 	call Lock_module_table
 
-	mov ecx, [ss:_ModuleIdx]
+	mov ecx, .Module_idx
 	call Get_module_entry
 
 	mov ebx, [fs:ecx + Module_address_space_table]
@@ -299,6 +286,8 @@ Function_Add_address_space:
 
 	; Create address space table if it is not existed
 	mov [gs:ebp], dword SizeOf_Address_space_table
+	mov eax, .Module_idx
+	mov [gs:ebp + 4], eax
 	call Function_Allocate
 
 	test eax, eax
@@ -326,6 +315,7 @@ Function_Add_address_space:
 	.Found:
 	add ebx, ecx
 
+	.Next:
 	mov eax, .Base
 	mov [fs:ebx + 2], ax
 	shr eax, 16
@@ -344,8 +334,10 @@ Function_Add_address_space:
 	mov [fs:ebx + 8], dword 1
 
 	shr ecx, 4
-	add ecx, [ss:_ModuleIdx]
+	add ecx, .Module_idx
 	mov [ss:_Result], ecx
+
+	.Done:
 	xor eax, eax
 
 	.Return:
@@ -360,6 +352,7 @@ Function_Add_address_space:
 	mov eax, CANNOT_ALLOCATE_MEMORY
 	jmp .Return
 
+	restore .Module_idx
 	restore .Base
 	restore .Limit
 
@@ -403,10 +396,6 @@ Function_Get_descriptor:
 
 	.Error2:
 	mov eax, NOT_EXISTED_ADDRESS_SPACE
-	ret
-
-Function_Get_address_space:
-	mov ecx, [fs:System_data + DS_space + ecx * 4]
 	ret
 
 Function_Set_DS_space:
@@ -466,7 +455,7 @@ Function_Set_ES_space:
 	mov edx, 4
 	call Function_Load_GDT_entry
 	mov ax, $4 * 8
-	mov ds, ax
+	mov es, ax
 
 	.Finish:
 	xor eax, eax

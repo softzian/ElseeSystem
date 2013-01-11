@@ -27,15 +27,15 @@ use32
 ;               Flag : Card32
 ;       End
 
-IThread = $100008
+IThread = $100010
 ; Function 1: New_Thread (StartPoint : Address) : Thread_idx
 ; Function 2: Start (ThreadIdx : Card32)
 ; Function 3: Yield
 ; Function 4: Block_self
 ; Function 5: Block (ThreadIdx : Card32)
 
-; Function 6: Disable_thread_switch
-; Function 7: Enable_thread_switch
+; Function 6: Disable_context_switch
+; Function 7: Enable_context_switch
 
 Const:
 	SizeOf_Thread_entry = 64
@@ -71,6 +71,9 @@ Interface:
 	dd Function_Yield
 	dd Function_Block_self
 	dd 0
+
+	dd Function_Disable_context_switch
+	dd Function_Enable_context_switch
 Header:
 
 Function_Init:
@@ -81,12 +84,13 @@ Function_Init:
 	mov ebx, eax
 	lea esi, [eax + Interface]
 	mov [fs:IThread], eax
+	mov [fs:IThread + 4], esi
 
 	xor eax, eax
 	.Loop:
 		add [fs:esi + eax], ebx
 		add eax, 4
-		cmp eax, 4 * 6
+		cmp eax, 4 * 7
 		jb .Loop
 
 	cli
@@ -97,14 +101,18 @@ Function_Init:
 	mov [gs:ebp + 1], eax
 	invoke IInterrupt, IInterrupt.Install_IRQ_direct_handler
 
+	; Enable IRQ0, start threads
+	mov [gs:ebp], byte 0
+	invoke IInterrupt, IInterrupt.Enable_IRQ
+
+	sti
+
 	mov [gs:ebp], dword 5
 	mov [gs:ebp + 4], dword 0
 	mov [gs:ebp + 8], dword 0
 	mov [gs:ebp + 12], dword 0
 	mov [gs:ebp + 16], dword ebx
 	invoke ISystem, ISystem.Register_Module
-
-	sti
 
 	pop esi
 	pop edi
@@ -121,10 +129,11 @@ Lock_Thread_module:
 	ret
 
 Function_New_Thread:	 ; Function 1
-	.StartPoint equ dword [gs:ebp - 4]	  ; StartPoint : Address
+	.StartPoint equ dword [gs:ebp - 8] ; StartPoint : Address
+	.Module_idx equ dword [gs:ebp - 4] ; Module_idx : Card32
 
 	push ebp
-	add ebp, 4
+	add ebp, 8
 
 	push ebx
 	push ecx
@@ -132,25 +141,26 @@ Function_New_Thread:	 ; Function 1
 	push esi
 	push edi
 
-	mov ecx, [ss:_ModuleIdx]
+	mov esi, .Module_idx ; For now, esi is Module_idx
+	mov ecx, esi
 	invoke ISystem, ISystem.Get_module_thread_table
 
-	; test eax, eax
-	; jnz WTF_ModuleIdx_is_invalid !? Who touch the SS critical data?
+	;test eax, eax ; Error handling here
 
 	mov edi, ecx
 	test ecx, ecx
 	jnz .Find_free_entry
 
 	; This module doesn't have thread table, create one for it
+	mov ecx, esi
 	mov [gs:ebp], dword SizeOf_Thread_table
+	mov [gs:ebp + 4], ecx
 	invoke ISystem, ISystem.Allocate
 
 	test eax, eax
 	jnz .Error1	; Damn, run out of memory
 
 	mov edi, [ss:_Result]
-	mov ecx, [ss:_ModuleIdx]
 	invoke ISystem, ISystem.Set_module_thread_table
 
 	xor ecx, ecx
@@ -176,12 +186,14 @@ Function_New_Thread:	 ; Function 1
 	add edi, ecx
 
 	mov [gs:ebp], dword $1000	; Size
+	mov [gs:ebp + 4], esi
 	invoke ISystem, ISystem.Allocate    ; Allocate the GS stack
 	test eax, eax
 	jnz .Error3	; Can not allocate stack
 	push dword [ss:_Result]
 
 	mov [gs:ebp], dword $1000
+	mov [gs:ebp + 4], esi
 	invoke ISystem, ISystem.Allocate    ; Allocate the SS stack
 	test eax, eax
 	jnz .Error4	; Can not allocate stack
@@ -198,7 +210,7 @@ Function_New_Thread:	 ; Function 1
 	mov [fs:edi + SS_entry + 5], word 1100000010010110b
 
 	; Init data on the first stack
-	mov eax, [ss:_ModuleIdx]
+	mov eax, esi
 	mov [fs:ebx - $14], eax
 	shr ecx, 6
 	add eax, ecx
@@ -242,7 +254,7 @@ Function_New_Thread:	 ; Function 1
 
 	; Insert thread to the round robin list
 	mov edx, ecx
-	add edx, [ss:_ModuleIdx]
+	add edx, esi
 	mov [ss:_Result], edx	       ; Return ThreadIdx
 
 	mov ecx, [fs:ebx + Var.First_thread]
@@ -306,6 +318,7 @@ Function_New_Thread:	 ; Function 1
 	.Error4:
 
 	restore .StartPoint
+	restore .Module_idx
 
 Set_thread_state:
 	.ThreadIdx equ dword [gs:ebp - 8]  ; ThreadIdx : Card32
@@ -367,9 +380,8 @@ Function_Start: 	; Function 2
 Function_Yield:        ; Function 3
 	push eax
 	push ebx
-	mov ebx, [fs:IThread]
 
-	call Lock_Thread_module
+	call Lock_thread_switch
 
 	mov eax, [ss:esp + 8]
 	mov [fs:ebx + Var.EIP], eax
@@ -388,15 +400,20 @@ Function_Block_self:	; Function 4
 	mov [gs:ebp + 4], dword Blocked
 	jmp Set_thread_state
 
-Function_Disable_thread_switch: ; Function 6
+Lock_thread_switch:
+	mov ebx, [fs:IThread]
+	bts dword [fs:ebx + Var.Switch_lock], 0
+	ret
+
+Function_Disable_context_switch: ; Function 6
 	push ebx
-	call Lock_Thread_module
+	call Lock_thread_switch
 	pop ebx
 	ret
 
-Function_Enable_thread_switch: ; Function 7
+Function_Enable_context_switch: ; Function 7
 	mov eax, [fs:IThread]
-	btr dword [fs:eax + Var.Lock], 0
+	btr dword [fs:eax + Var.Switch_lock], 0
 	ret
 
 Procedure_Switch_Context:
@@ -444,9 +461,10 @@ Procedure_Switch_Context:
 	mov [fs:esi + GS_entry + 4], ebx
 	mov [fs:esi + GS_entry], ecx
 
+	cmp [fs:esi + State], dword Blocked
+	je .j1
 	mov [fs:esi + State], dword Stop
-
-	mov edx, [fs:esi + Next_thread]
+	.j1: mov edx, [fs:esi + Next_thread]
 
 	.Loop:
 		mov ecx, edx
@@ -497,7 +515,7 @@ Procedure_Switch_Context:
 
 	; Release lock
 	mov ebx, [fs:IThread]
-	btr dword [fs:ebx + Var.Lock], 0
+	btr dword [fs:ebx + Var.Switch_lock], 0
 
 	pop edi
 	pop esi
@@ -524,8 +542,8 @@ Procedure_IRQ0:
 
 	;mov dword [fs:ebx + Var.TimeCount], 0
 
-	; Get lock 0
-	lock bts dword [fs:ebx + Var.Lock], 0
+	; Get switch lock
+	bts dword [fs:ebx + Var.Switch_lock], 0
 	jc .Return
 
 	mov eax, [ss:esp + 4 * 2]
@@ -535,6 +553,8 @@ Procedure_IRQ0:
 	mov [ss:esp + 4 * 2], eax
 
 	.Return:
+	dec esp
+	mov [ss:esp], byte 0
 	invoke IInterrupt, IInterrupt.Send_EOI
 
 	pop ebx
@@ -549,5 +569,6 @@ Var:
 	.First_thread dd 0
 	.Active_thread dd 0
 	.Lock dd 0
+	.Switch_lock dd 1
 	.EIP dd 0
 	.TimeCount dd 0

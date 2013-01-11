@@ -13,7 +13,7 @@ include 'include\Header.inc'
 include 'include\errcode.inc'
 use32
 
-IVideo = $10000C
+IVideo = $100018
 ; The first three functions are for debug purpose
 ; Function 1: Write_Telex (var Text : Array of Char; Count : Word)
 ; Function 2: Clear_Screen
@@ -103,6 +103,7 @@ Function_Init:
 	mov ebx, eax
 	lea esi, [eax + Interface]
 	mov [fs:IVideo], eax
+	mov [fs:IVideo + 4], esi
 
 	xor eax, eax
 	.Loop:

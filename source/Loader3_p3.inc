@@ -1,8 +1,3 @@
-macro Set_Active_Module x
-{
-	mov [ss:_ModuleIdx], dword x
-}
-
 Init_base_system:
 	; ------------------ ;
 	; Init System module ;
@@ -29,19 +24,7 @@ Init_base_system:
 	Set_Active_Module eax
 	Init_module eax
 
-	mov eax, $24000 	; Data
-	Set_Active_Module eax
-	Init_module eax
-
-	mov eax, $25000 	; Network
-	Set_Active_Module eax
-	Init_module eax
-
-	;mov eax, $32000         ; RTL8139
-	;Set_Active_Module eax
-	;Init_module eax
-
-	mov eax, $27000 	; Am79C970
+	mov eax, $24000 	; System2
 	Set_Active_Module eax
 	Init_module eax
 
@@ -54,22 +37,17 @@ Init_base_system:
 	invoke ISystem, ISystem.Register_Module
 
 	; ------------------------------- ;
-	; Create console and start thread ;
+	;          Start thread           ;
 	; ------------------------------- ;
-	cli
-
 	mov [gs:ebp], dword Main_thread
+	mov [gs:ebp + 4], dword $7000
 	invoke IThread, IThread.New_Thread
 
 	mov eax, [ss:_Result]
 	mov [gs:ebp], eax
 	invoke IThread, IThread.Start
 
-	; Enable IRQ0, start threads
-	mov [gs:ebp], byte 0
-	invoke IInterrupt, IInterrupt.Enable_IRQ
-
-	sti
+	invoke IThread, IThread.Enable_context_switch
 
 	ret
 
@@ -104,6 +82,16 @@ Init_Code_table:
 
 	mov [gs:ebp], dword $22000
 	mov [gs:ebp + 4], dword $22FFF
+	mov [gs:ebp + 8], dword 1
+	invoke ISystem, ISystem.Mark_Code
+
+	mov [gs:ebp], dword $23000
+	mov [gs:ebp + 4], dword $23FFF
+	mov [gs:ebp + 8], dword 1
+	invoke ISystem, ISystem.Mark_Code
+
+	mov [gs:ebp], dword $24000
+	mov [gs:ebp + 4], dword $24FFF
 	mov [gs:ebp + 8], dword 1
 	invoke ISystem, ISystem.Mark_Code
 
@@ -147,19 +135,19 @@ Print_Memory_Table:
 
 	.Loop:
 
-	mov eax, [ds:4 + ecx]
+	mov eax, [fs:$200004 + ecx]
 	Write_register eax
 
-	mov eax, [ds:4 + ecx + 4]
+	mov eax, [fs:$200004 + ecx + 4]
 	Write_register eax
 
-	mov eax, [ds:4 + ecx + 8]
+	mov eax, [fs:$200004 + ecx + 8]
 	Write_register eax
 
 	invoke IVideo, IVideo.New_Line
 
 	add ecx, 12
-	cmp [ds:4 + ecx + 4], dword 0
+	cmp [fs:$200004 + ecx + 4], dword 0
 	jne .Loop
 	invoke IVideo, IVideo.New_Line
 	ret

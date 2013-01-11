@@ -13,7 +13,7 @@ include 'include\errcode.inc'
 include 'include\Header.inc'
 use32
 
-IInterrupt = $100004
+IInterrupt = $100008
 ; Function 1: Install_IRQ_handler (IRQ : Byte; Entry_point : Address)
 ; Function 2: Install_IRQ_direct_handler (IRQ : Byte; Entry_point : Address)
 ; Function 3: Mask_all_IRQ
@@ -41,6 +41,7 @@ Function_Init:
 	mov ebx, eax
 	lea esi, [eax + Interface]
 	mov [fs:IInterrupt], eax
+	mov [fs:IInterrupt + 4], esi
 
 	xor eax, eax
 	.Loop:
@@ -54,6 +55,11 @@ Function_Init:
 
 	lea eax, [ebx + Procedure_INT_13]
 	mov [gs:ebp], byte 13
+	mov [gs:ebp + 1], eax
+	invoke ISystem, ISystem.Install_ISR
+
+	lea eax, [ebx + Procedure_INT_1]
+	mov [gs:ebp], byte 1
 	mov [gs:ebp + 1], eax
 	invoke ISystem, ISystem.Install_ISR
 
@@ -209,10 +215,8 @@ Function_Install_IRQ_direct_handler: ; Function 2
 	.IRQ equ byte [gs:ebp]
 	.Entry_point equ dword [gs:ebp + 1]
 
-	cmp .IRQ, 16
-	jae .Error1
 	cmp .IRQ, 2
-	jbe .Error1
+	jae .Error1
 
 	add .IRQ, $20
 	invoke ISystem, ISystem.Install_ISR
@@ -299,9 +303,19 @@ Function_Disable_IRQ:
 	restore .IRQNum
 
 Function_Send_EOI:
+	.IRQ equ byte [ss:esp + 4]
+
 	mov al, 100000b
 	out $20, al
-	ret
+
+	cmp .IRQ, 8
+	jb .Return
+
+	out $A0, al
+
+	.Return: ret 1
+
+	restore .IRQ
 
 Procedure_IRQ_3:
 	pusha
@@ -382,6 +396,9 @@ Procedure_IRQ_15:
 	jmp Procedure_IRQ_Handler
 
 Procedure_IRQ_Handler:
+	dec esp
+	mov [ss:esp], al
+
 	mov ebx, 8 * 8
 	mov ds, bx
 	add bl, 16
@@ -422,27 +439,79 @@ Procedure_IRQ_Handler:
 	popa
 	iret
 
+Copy_loop:
+	mov al, [fs:ebx + ecx]
+	mov [ds:$10 + ecx], al
+	inc ecx
+	cmp ecx, edx
+	jb Copy_loop
+	ret
+
 macro Write str, x
 {
-	lea eax, [str + 1]
-	mov [gs:ebp], eax
-	mov [gs:ebp + 4], dword $10
-	xor eax, eax
-	mov al, byte [fs:str]
-	mov [gs:ebp + 8], eax
-	invoke ISystem, ISystem.Copy_code_to_data
-
-	xor eax, eax
-	mov al, byte [fs:str]
-	mov [gs:ebp], dword $10
-	mov [gs:ebp + 4], ax
-	invoke IVideo, IVideo.Write_Telex
+	push ebx
+	push ecx
+	push edx
 
 	mov eax, x
+	push eax
+	lea ebx, [str]
+
+	movzx edx, byte [fs:ebx]
+	inc ebx
+	xor ecx, ecx
+	call Copy_loop
+
+	mov [gs:ebp], dword $10
+	mov [gs:ebp + 4], dx
+	invoke IVideo, IVideo.Write_Telex
+
+	pop eax
 	Write_register eax
 
 	invoke IVideo, IVideo.New_Line
+
+	pop edx
+	pop ecx
+	pop ebx
 }
+
+Procedure_INT_1:
+	push eax
+	mov ax, 10 * 8
+	mov gs, ax
+
+	mov eax, [ss:esp + 4]
+	Write_register eax
+
+	mov eax, [ss:_ModuleIdx]
+	Write_register eax
+
+	mov eax, dr7
+	push eax
+	xor eax, eax
+	mov dr7, eax
+
+	mov eax, dr0
+	Write_register eax
+	mov eax, [fs:eax]
+	Write_register eax
+
+	mov eax, dr0
+	mov eax, [fs:eax + 4]
+	Write_register eax
+
+	invoke IVideo, IVideo.New_Line
+
+	pop eax
+	mov dr7, eax
+
+	mov ax, 6 * 8
+	mov gs, ax
+	pop eax
+	iret
+
+	.j1:
 
 Procedure_INT_13:
 	mov cx, $8 * 8
@@ -453,7 +522,8 @@ Procedure_INT_13:
 	mov ecx, ebx
 	mov ebx, [fs:IInterrupt]
 
-	Write ebx + Static.Text, [ss:esp + 4]
+	mov eax, [ss:esp + 4]
+	Write ebx + Static.Text, eax
 	Write ebx + Static.Text2, [ss:_ModuleIdx]
 	Write ebx + Static.Text3, [ss:_ThreadIdx]
 	Write ebx + Static.Text4, ecx

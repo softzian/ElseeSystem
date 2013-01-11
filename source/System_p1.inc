@@ -23,7 +23,7 @@ Get_lock_0:
 	jc .Wait
 	ret
 	.Wait:
-	invoke IThread, IThread.Yield
+	pause
 	jmp Get_lock_0
 
 Release_lock_0:
@@ -81,10 +81,11 @@ Function_Create_Region:  ; Function 1
 	restore .Limit
 
 Function_Allocate:    ; Function 2
-	.Size equ dword [gs:ebp - 4] ; Size : Cardinal
+	.Size equ dword [gs:ebp - 8] ; Size : Card32
+	.Module_idx equ dword [gs:ebp - 4] ; Module_idx : Card32
 
 	push ebp
-	add ebp, 4
+	add ebp, 8
 
 	push ebx
 	push ecx
@@ -159,7 +160,7 @@ Function_Allocate:    ; Function 2
 	call Function_Split_Entry
 
 	.Done:
-	mov eax, [ss:_ModuleIdx] ; Active module address
+	mov eax, .Module_idx ; Active module address
 	mov [fs:ebx + ecx], eax
 
 	; Return new pointer
@@ -184,6 +185,7 @@ Function_Allocate:    ; Function 2
 	jmp .Return
 
 	restore .Size
+	restore .Module_idx
 
 Function_Split_Entry:	; Parameter is the size we want to split
 	push ebp
