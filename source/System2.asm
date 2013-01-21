@@ -10,7 +10,6 @@
 ; If not, see http://creativecommons.org/publicdomain/zero/1.0/
 
 include 'include/Header.inc'
-include 'include/Errcode.inc'
 
 use32
 

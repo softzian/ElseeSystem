@@ -49,29 +49,14 @@ macro Write_register x
 	pop eax
 }
 
-macro Write_stack
-{
-	pop dword [gs:ebp]
-	push eax
-	push ds
-
-	push dword $7 * 8
-	pop ds
-
-	mov [gs:ebp + 4], dword $0
-	call dword [fs:$4014] ; call Function_Cardinal_to_HexStr_32
-
-	mov [gs:ebp], dword $0
-	mov [gs:ebp + 4], word 9
-	invoke IVideo, IVideo.Write_Telex
-
-	pop ds
-	pop eax
-}
-
 macro Write_reg_byte x
 {
 	push eax
+	push ds
+
+	push dword $8 * 8
+	pop ds
+
 	mov [gs:ebp], x
 	mov [gs:ebp + 4], dword $0
 	call dword [fs:$4014] ; call Function_Cardinal_to_HexStr_32
@@ -80,6 +65,7 @@ macro Write_reg_byte x
 	mov [gs:ebp + 4], word 3
 	invoke IVideo, IVideo.Write_Telex
 
+	pop ds
 	pop eax
 }
 
