@@ -13,17 +13,19 @@ include 'include\errcode.inc'
 include 'include\Header.inc'
 use32
 
-IInterrupt = $100008
-; Function 1: Install_IRQ_handler (IRQ : Byte; Entry_point : Address)
-; Function 2: Install_IRQ_direct_handler (IRQ : Byte; Entry_point : Address)
-; Function 3: Mask_all_IRQ
-; Function 4: Enable_IRQ (IRQ : Byte)
-; Function 5: Disable_IRQ (IRQ : Byte)
-; Function 6: Send_EOI
+IInterrupt = $100010
+; Function 1: Install_ISR (INum : Byte; ISR_Entry : Address)
+; Function 2: Install_IRQ_handler (IRQ : Byte; Entry_point : Address)
+; Function 3: Install_IRQ_direct_handler (IRQ : Byte; Entry_point : Address)
+; Function 4: Mask_all_IRQ
+; Function 5: Enable_IRQ (IRQ : Byte)
+; Function 6: Disable_IRQ (IRQ : Byte)
+; Function 7: Send_EOI
 
 jmp near dword Function_Init
 dd Header
 Interface:
+	dd Function_Install_ISR
 	dd Function_Install_IRQ_handler
 	dd Function_Install_IRQ_direct_handler
 	dd Function_Mask_all_IRQ
@@ -47,8 +49,19 @@ Function_Init:
 	.Loop:
 		add [fs:esi + eax], ebx
 		add eax, 4
-		cmp eax, 4 * 6
+		cmp eax, 4 * 7
 		jb .Loop
+
+	mov esi, $7000
+	xor eax, eax
+	.Loop3:
+		mov [fs:esi + eax], dword $80000
+		mov [fs:esi + eax + 4], dword $E00
+		add eax, 8
+		cmp eax, $800
+		jb .Loop3
+
+	lidt [fs:ebx + IDTR]
 
 	call Function_Init_PIC
 	call Function_Mask_all_IRQ
@@ -56,89 +69,88 @@ Function_Init:
 	lea eax, [ebx + Procedure_INT_13]
 	mov [gs:ebp], byte 13
 	mov [gs:ebp + 1], eax
-	invoke ISystem, ISystem.Install_ISR
-
-	lea eax, [ebx + Procedure_INT_1]
-	mov [gs:ebp], byte 1
-	mov [gs:ebp + 1], eax
-	invoke ISystem, ISystem.Install_ISR
+	call Function_Install_ISR
 
 	lea eax, [ebx + Procedure_IRQ_3]
 	mov [gs:ebp], byte $23
 	mov [gs:ebp + 1], eax
-	invoke ISystem, ISystem.Install_ISR
+	call Function_Install_ISR
 
 	lea eax, [ebx + Procedure_IRQ_4]
 	mov [gs:ebp], byte $24
 	mov [gs:ebp + 1], eax
-	invoke ISystem, ISystem.Install_ISR
+	call Function_Install_ISR
 
 	lea eax, [ebx + Procedure_IRQ_5]
 	mov [gs:ebp], byte $25
 	mov [gs:ebp + 1], eax
-	invoke ISystem, ISystem.Install_ISR
+	call Function_Install_ISR
 
 	lea eax, [ebx + Procedure_IRQ_6]
 	mov [gs:ebp], byte $26
 	mov [gs:ebp + 1], eax
-	invoke ISystem, ISystem.Install_ISR
+	call Function_Install_ISR
 
 	lea eax, [ebx + Procedure_IRQ_7]
 	mov [gs:ebp], byte $27
 	mov [gs:ebp + 1], eax
-	invoke ISystem, ISystem.Install_ISR
+	call Function_Install_ISR
 
 	lea eax, [ebx + Procedure_IRQ_8]
 	mov [gs:ebp], byte $28
 	mov [gs:ebp + 1], eax
-	invoke ISystem, ISystem.Install_ISR
+	call Function_Install_ISR
 
 	lea eax, [ebx + Procedure_IRQ_9]
 	mov [gs:ebp], byte $29
 	mov [gs:ebp + 1], eax
-	invoke ISystem, ISystem.Install_ISR
+	call Function_Install_ISR
 
 	lea eax, [ebx + Procedure_IRQ_10]
 	mov [gs:ebp], byte $2A
 	mov [gs:ebp + 1], eax
-	invoke ISystem, ISystem.Install_ISR
+	call Function_Install_ISR
 
 	lea eax, [ebx + Procedure_IRQ_11]
 	mov [gs:ebp], byte $2B
 	mov [gs:ebp + 1], eax
-	invoke ISystem, ISystem.Install_ISR
+	call Function_Install_ISR
 
 	lea eax, [ebx + Procedure_IRQ_12]
 	mov [gs:ebp], byte $2C
 	mov [gs:ebp + 1], eax
-	invoke ISystem, ISystem.Install_ISR
+	call Function_Install_ISR
 
 	lea eax, [ebx + Procedure_IRQ_13]
 	mov [gs:ebp], byte $2D
 	mov [gs:ebp + 1], eax
-	invoke ISystem, ISystem.Install_ISR
+	call Function_Install_ISR
 
 	lea eax, [ebx + Procedure_IRQ_14]
 	mov [gs:ebp], byte $2E
 	mov [gs:ebp + 1], eax
-	invoke ISystem, ISystem.Install_ISR
+	call Function_Install_ISR
 
 	lea eax, [ebx + Procedure_IRQ_15]
 	mov [gs:ebp], byte $2F
 	mov [gs:ebp + 1], eax
-	invoke ISystem, ISystem.Install_ISR
+	call Function_Install_ISR
 
-	mov [gs:ebp], dword 4
+	mov [gs:ebp], dword 5
 	mov [gs:ebp + 4], dword 0
 	mov [gs:ebp + 8], dword 0
 	mov [gs:ebp + 12], dword 0
 	mov [gs:ebp + 16], dword ebx
-	invoke ISystem, ISystem.Register_Module
+	invoke IModule, IModule.Register_Module
 
 	pop esi
 	pop edi
 	pop ebx
 	ret
+
+IDTR:
+	.Limit dw 2047
+	.Base dd $7000
 
 Function_Init_PIC:
 	mov al, $11
@@ -162,7 +174,36 @@ Function_Init_PIC:
 	xor eax, eax
 	ret
 
-Function_Install_IRQ_handler: ; Function 1
+Function_Install_ISR: ; Function 1
+	.INum equ byte [gs:ebp - 5]
+	.ISR_Entry equ dword [gs:ebp - 4]
+
+	push ebp
+	add ebp, 5
+	push ebx
+
+	mov ebx, $7000
+	xor eax, eax
+	mov al, .INum
+	shl eax, 3
+	add ebx, eax
+
+	mov eax, .ISR_Entry
+	mov [fs:ebx], ax
+	mov byte [fs:ebx + 5], 10001110b
+	shr eax, 16
+	mov [fs:ebx + 6], ax
+
+	xor eax, eax
+	pop ebx
+
+	pop ebp
+	ret
+
+	restore .INum
+	restore .ISR_Entry
+
+Function_Install_IRQ_handler: ; Function 2
 	.IRQ equ byte [gs:ebp - 5]
 	.Entry_point equ dword [gs:ebp - 4]
 
@@ -211,7 +252,7 @@ Function_Install_IRQ_handler: ; Function 1
 	restore .IRQ
 	restore .Entry_point
 
-Function_Install_IRQ_direct_handler: ; Function 2
+Function_Install_IRQ_direct_handler: ; Function 3
 	.IRQ equ byte [gs:ebp]
 	.Entry_point equ dword [gs:ebp + 1]
 
@@ -219,7 +260,7 @@ Function_Install_IRQ_direct_handler: ; Function 2
 	jae .Error1
 
 	add .IRQ, $20
-	invoke ISystem, ISystem.Install_ISR
+	call Function_Install_ISR
 	ret
 
 	restore .IRQ
@@ -464,60 +505,23 @@ macro Write str, x
 
 	mov [gs:ebp], dword $10
 	mov [gs:ebp + 4], dx
-	invoke IVideo, IVideo.Write_Telex
+	invoke ICoreVideo, ICoreVideo.Write_Telex
 
 	pop eax
 	Write_register eax
 
-	invoke IVideo, IVideo.New_Line
+	invoke ICoreVideo, ICoreVideo.New_Line
 
 	pop edx
 	pop ecx
 	pop ebx
 }
 
-Procedure_INT_1:
-	push eax
-	mov ax, 10 * 8
-	mov gs, ax
-
-	mov eax, [ss:esp + 4]
-	Write_register eax
-
-	mov eax, [ss:_ModuleIdx]
-	Write_register eax
-
-	mov eax, dr7
-	push eax
-	xor eax, eax
-	mov dr7, eax
-
-	mov eax, dr0
-	Write_register eax
-	mov eax, [fs:eax]
-	Write_register eax
-
-	mov eax, dr0
-	mov eax, [fs:eax + 4]
-	Write_register eax
-
-	invoke IVideo, IVideo.New_Line
-
-	pop eax
-	mov dr7, eax
-
-	mov ax, 6 * 8
-	mov gs, ax
-	pop eax
-	iret
-
-	.j1:
-
 Procedure_INT_13:
-	mov cx, $8 * 8
+	mov cx, 4 * 8
 	mov ds, cx
 
-	invoke IVideo, IVideo.Clear_Screen
+	;invoke ICoreVideo, ICoreVideo.Clear_Screen
 
 	mov ecx, ebx
 	mov ebx, [fs:IInterrupt]
@@ -528,13 +532,23 @@ Procedure_INT_13:
 	Write ebx + Static.Text3, [ss:_ThreadIdx]
 	Write ebx + Static.Text4, ecx
 
-	xor ecx, ecx
+	mov ecx, esp
 	.Loop:
+		mov eax, [ss:ecx]
+		Write_register eax
+		add ecx, 4
+		cmp ecx, _ThreadIdx
+		jne .Loop
+
+	invoke ICoreVideo, ICoreVideo.New_Line
+
+	xor ecx, ecx
+	.Loop2:
 		mov eax, [gs:ecx]
 		Write_register eax
 		add ecx, 4
-		cmp ecx, $18
-		jbe .Loop
+		cmp ecx, ebp
+		jb .Loop2
 
 	hlt
 

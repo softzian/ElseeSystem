@@ -1,11 +1,6 @@
-True = 1
-False = 0
-
 _Result = $FFFFFFF0
 _ModuleIdx = $FFFFFFEC
 _ThreadIdx = $FFFFFFE8
-
-HANDLE_VIDEO_CONTEXT = 1
 
 macro invoke i, x
 {
@@ -24,17 +19,12 @@ macro invoke3 i, x
 	call dword [fs:eax + 9 + x]
 }
 
-macro Init_module x
-{
-	call x
-}
-
 macro Write_register x
 {
 	push eax
 	push ds
 
-	push dword $8 * 8
+	push dword $4 * 8
 	pop ds
 
 	mov [gs:ebp], x
@@ -43,7 +33,7 @@ macro Write_register x
 
 	mov [gs:ebp], dword $0
 	mov [gs:ebp + 4], word 9
-	invoke IVideo, IVideo.Write_Telex
+	invoke ICoreVideo, ICoreVideo.Write_Telex
 
 	pop ds
 	pop eax
@@ -63,46 +53,63 @@ macro Write_reg_byte x
 
 	mov [gs:ebp], dword $6
 	mov [gs:ebp + 4], word 3
-	invoke IVideo, IVideo.Write_Telex
+	invoke ICoreVideo, ICoreVideo.Write_Telex
 
 	pop ds
 	pop eax
 }
 
-ISystem = $100000
-ISystem.Create_Region = 0
-ISystem.Allocate = 4
-ISystem.Deallocate = 8
-ISystem.Mark_Memory = 12
-;
-ISystem.Create_Code_Region = 16
-ISystem.Allocate_Code = 20
-ISystem.Deallocate_Code = 24
-ISystem.Mark_Code = 28
-;
-ISystem.Register_Module = 32
-ISystem.Set_module_thread_table = 36
-ISystem.Get_module_thread_table = 40
-ISystem.Modify_GDT_entry = 44
-ISystem.Save_GDT_entry = 48
-ISystem.Load_GDT_entry = 52
-;
-ISystem.Add_address_space = 56
-ISystem.Set_DS_space = 60
-ISystem.Set_ES_space = 64
-ISystem.Find_module = 68
-;
-ISystem.Install_ISR = 72
+macro Get_DS_space
+{
+	mov eax, [fs:$4000 + 24]
+}
 
-IInterrupt = $100008
-IInterrupt.Install_IRQ_handler = 0
-IInterrupt.Install_IRQ_direct_handler = 4
-IInterrupt.Mask_all_IRQ = 8
-IInterrupt.Enable_IRQ = 12
-IInterrupt.Disable_IRQ = 16
-IInterrupt.Send_EOI = 20
+macro Get_ES_space
+{
+	mov eax, [fs:$4000 + 28]
+}
 
-IThread = $100010
+macro Init_module x
+{
+	call x
+}
+
+macro Set_Active_Module x
+{
+	mov [ss:_ModuleIdx], dword x
+}
+
+IMemory = $100000
+IMemory.Create_Region = 0
+IMemory.Allocate = 4
+IMemory.Deallocate = 8
+IMemory.Mark_Memory = 12
+IMemory.Create_Code_Region = 16
+IMemory.Allocate_Code = 20
+IMemory.Deallocate_Code = 24
+IMemory.Mark_Code = 28
+
+IModule = $100008
+IModule.Register_Module = 0
+IModule.Find_module = 4
+IModule.Set_module_thread_table = 8
+IModule.Get_module_thread_table = 12
+IModule.Save_system_state = 16
+IModule.Load_system_state = 20
+IModule.Add_address_space = 24
+IModule.Set_DS_space = 28
+IModule.Set_ES_space = 32
+
+IInterrupt = $100010
+IInterrupt.Install_ISR = 0
+IInterrupt.Install_IRQ_handler = 4
+IInterrupt.Install_IRQ_direct_handler = 8
+IInterrupt.Mask_all_IRQ = 12
+IInterrupt.Enable_IRQ = 16
+IInterrupt.Disable_IRQ = 20
+IInterrupt.Send_EOI = 24
+
+IThread = $100018
 IThread.New_Thread = 0
 IThread.Start = 4
 IThread.Yield = 8
@@ -111,47 +118,16 @@ IThread.Block = 16
 IThread.Disable_context_switch = 20
 IThread.Enable_context_switch = 24
 
-IVideo = $100018
-IVideo.Write_Telex = 0
-IVideo.Clear_Screen = 4
-IVideo.New_Line = 8
+ICoreVideo = $100020
+ICoreVideo.Write_Telex = 0
+ICoreVideo.Clear_Screen = 4
+ICoreVideo.New_Line = 8
 
-ISystem2 = $100020
-ISystem2.Allocate = 0
-ISystem2.Deallocate = 4
-ISystem2.Allocate_Code = 8
-ISystem2.Deallocate_Code = 12
-ISystem2.Register_Module = 16
-ISystem2.New_Thread = 20
-ISystem2.Add_address_space = 24
-
-IData = $100028
-IData.Create_table = 0
-IData.Add_table_entry = 4
-IData.Delete_table_table = 8
-IData.Get_table_entry = 12
-
-INetwork = $100030
-INetwork.Add_adapter = 0
-INetwork.Transmit = 4
-INetwork.Add_receiver = 8
-INetwork.Receive_packet = 12
-
-IKeyboard = $100010
-IKeyboard.Set_target_queue = IKeyboard + 0
-IKeyboard.Shift_character = IKeyboard + 4
-
-IHandle = $100A00
-IHandle.Create_handle = IHandle + 4
-IHandle.Delete_handle = IHandle + 8
-IHandle.Request_handle = IHandle + 12
-IHandle.Resolve_handle = IHandle + 16
-IHandle.Release_handle = IHandle + 20
-
-IConsole = $100E00
-IConsole.Alloc_console = IConsole + 4
-IConsole.Write_char = IConsole + 8
-IConsole.Read_char = IConsole + 12
-IConsole.Switch_console = IConsole + 16
-IConsole.Lock_console = IConsole + 20
-IConsole.Release_console = IConsole + 24
+ICore = $100028
+ICore.Allocate = 0
+ICore.Deallocate = 4
+ICore.Allocate_code = 8
+ICore.Deallocate_code = 12
+ICore.Register_module = 16
+ICore.New_thread = 20
+ICore.Add_address_space = 24
