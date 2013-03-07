@@ -27,6 +27,10 @@ Const:
 	Data_region_lock = 12
 	Code_region_lock = 14
 
+	Page_directory = $13000
+	First_page_table = $14000
+	Bitmap_16M = $15000
+
 Error_Code:
 	REGION_SIZE_IS_NOT_LARGE_ENOUGH = -1
 	NON_POSITIVE_SIZE = INVALID_SIZE
@@ -78,12 +82,15 @@ Function_Init:
 	mov [fs:System_data + Data_region_lock], word 0
 	mov [fs:System_data + Code_region_lock], word 0
 
+	mov eax, [fs:$1000]
+	mov [fs:$19000], eax
+
+	call Setup_paging
+
 	pop esi
 	pop edi
 	pop ebx
 	ret
-
-Region_Address equ [fs:0]
 
 Get_lock_0:
 	lock bts word [fs:System_data + Data_region_lock], 0
@@ -118,20 +125,17 @@ Function_Create_Region:  ; Function 1
 	; Zero fill $4000 bytes
 	xor ecx, ecx
 	.Fill_zero:
-		mov dword [fs:ebx + ecx], 0
-		mov dword [fs:ebx + ecx + 4], 0
+		mov dword [fs:$A000 + ecx], 0
+		mov dword [fs:$A000 + ecx + 4], 0
 		add ecx, 8
 		cmp ecx, SizeOf_Data_Region
 		jb .Fill_zero
 
 	; Create the first entry
 	inc eax
-	sub eax, SizeOf_Data_Region
-	add ecx, ebx
-	mov [fs:ebx + SizeOf_Region_Header + 4], ecx
-	mov [fs:ebx + SizeOf_Region_Header + 8], eax
+	mov [fs:$A000 + SizeOf_Region_Header + 4], ebx
+	mov [fs:$A000 + SizeOf_Region_Header + 8], eax
 
-	mov Region_Address, ebx
 	xor eax, eax
 
 	.Return:
@@ -166,7 +170,7 @@ Function_Allocate:    ; Function 2
 	.Step1:
 	xor ecx, ecx
 	mov eax, .Size
-	mov ebx, Region_Address
+	mov ebx, $A000
 	add ebx, SizeOf_Region_Header
 
 	.Loop1:
@@ -310,7 +314,7 @@ Function_Deallocate:	; Function 3
 	; Step 1 - Find Entry
 	.Step1:
 	mov eax, .Ptr
-	mov ebx, Region_Address
+	mov ebx, $A000
 	add ebx, SizeOf_Region_Header
 	xor ecx, ecx
 
@@ -459,7 +463,7 @@ Function_Mark_Memory:	; Function 4
 	inc eax
 
 	; Step 1 - Find entry
-	mov ebx, Region_Address
+	mov ebx, $A000
 	add ebx, SizeOf_Region_Header
 	xor ecx, ecx
 
@@ -534,8 +538,6 @@ Function_Mark_Memory:	; Function 4
 	restore .Start
 	restore .Limit
 	restore .Module_Idx
-
-restore Region_Address
 
 Get_lock_1:
 	lock bts word [fs:System_data + Code_region_lock], 0
@@ -982,3 +984,32 @@ Function_Mark_Code:   ; Function 8
 	restore .Start
 	restore .Limit
 	restore .Type
+
+Setup_paging:
+	mov esi, Page_directory
+	xor eax, eax
+	mov ecx, ($1000 / 4) - 1
+	.Loop1:
+		mov [fs:esi + ecx * 4], eax
+		loop .Loop1
+
+	mov eax, First_page_table + $F
+	mov [fs:esi], eax
+
+	mov esi, First_page_table
+	xor ecx, ecx
+	mov eax, $F
+	.Loop2:
+		mov [fs:esi + ecx], eax
+		add eax, $1000
+		add ecx, 4
+		cmp ecx, $1000
+		jb .Loop2
+
+	mov eax, Page_directory
+	mov cr3, eax
+	mov eax, cr0
+	bts eax, 31
+	mov cr0, eax
+
+	ret

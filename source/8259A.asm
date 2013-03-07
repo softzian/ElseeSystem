@@ -54,6 +54,13 @@ Function_Init:
 
 	mov esi, $7000
 	xor eax, eax
+	;.Loop2:
+	;        mov [fs:esi + eax], dword $380000
+	;        mov [fs:esi + eax + 4], dword $500
+	;        add eax, 8
+	;        cmp eax, $100
+	;        jb .Loop2
+
 	.Loop3:
 		mov [fs:esi + eax], dword $80000
 		mov [fs:esi + eax + 4], dword $E00
@@ -190,7 +197,7 @@ Function_Install_ISR: ; Function 1
 
 	mov eax, .ISR_Entry
 	mov [fs:ebx], ax
-	mov byte [fs:ebx + 5], 10001110b
+	bts word [fs:ebx + 4], 15
 	shr eax, 16
 	mov [fs:ebx + 6], ax
 
@@ -521,7 +528,7 @@ Procedure_INT_13:
 	mov cx, 4 * 8
 	mov ds, cx
 
-	;invoke ICoreVideo, ICoreVideo.Clear_Screen
+	invoke ICoreVideo, ICoreVideo.Clear_Screen
 
 	mov ecx, ebx
 	mov ebx, [fs:IInterrupt]

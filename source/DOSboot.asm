@@ -19,17 +19,11 @@ Begin:
 	push $3000
 	call Procedure_Load_file
 
-
-
 	push Var.Memory_filename
 	push $1000
 	push $0
 	push $4000
 	call Procedure_Load_file
-
-	mov ah, 9
-	mov dx, Var.Text1
-	int $21
 
 	push Var.Module_filename
 	push $1000
@@ -37,19 +31,11 @@ Begin:
 	push $4000
 	call Procedure_Load_file
 
-	mov ah, 9
-	mov dx, Var.Text1
-	int $21
-
 	push Var.Video_filename
 	push $1000
 	push $2000
 	push $4000
 	call Procedure_Load_file
-
-	mov ah, 9
-	mov dx, Var.Text1
-	int $21
 
 	push Var.8259A_filename
 	push $1000
@@ -57,19 +43,28 @@ Begin:
 	push $4000
 	call Procedure_Load_file
 
-	mov ah, 9
-	mov dx, Var.Text1
-	int $21
-
 	push Var.Thread_filename
 	push $1000
 	push $4000
 	push $4000
 	call Procedure_Load_file
 
-	mov ah, 9
-	mov dx, Var.Text1
-	int $21
+	push ds
+	xor ax, ax
+	mov ds, ax
+	mov [$1000], ax
+	mov [$1002], ax
+	mov ax, $E801
+	int $15
+	test ax, ax
+	jz .Use_CX
+	mov [$1000], ax
+	mov [$1002], bx
+	jmp .j1
+	.Use_CX:
+	mov [$1000], cx
+	mov [$1002], dx
+	.j1: pop ds
 
 	jmp Switch_to_Protected_Mode
 

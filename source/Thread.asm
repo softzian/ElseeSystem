@@ -375,7 +375,7 @@ Set_thread_state:
 	restore .State
 
 Function_Start: 	; Function 2
-	.ThreadIdx equ dword [gs:ebp - 4]  ; ThreadIdx : Cardinal
+	.ThreadIdx equ dword [gs:ebp]  ; ThreadIdx : Card32
 
 	mov [gs:ebp + 4], dword Stop
 	jmp Set_thread_state

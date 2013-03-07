@@ -30,6 +30,13 @@ Init_core_system:
 	Set_Active_Module eax
 	Init_module eax
 
+	movzx eax, word [fs:$19000]
+	Write_register eax
+	movzx eax, word [fs:$19002]
+	Write_register eax
+	cli
+	hlt
+
 	mov eax, $23000 	; Interrupt
 	Set_Active_Module eax
 	Init_module eax
@@ -73,12 +80,17 @@ Init_Code_table:
 
 	mov [gs:ebp], dword $4000
 	mov [gs:ebp + 4], dword $6FFF
-	mov [gs:ebp + 8], dword 3
+	mov [gs:ebp + 8], dword 4
 	invoke IMemory, IMemory.Mark_Code
 
 	mov [gs:ebp], dword $7000
-	mov [gs:ebp + 4], dword $FFFF
+	mov [gs:ebp + 4], dword $9FFF
 	mov [gs:ebp + 8], dword 1
+	invoke IMemory, IMemory.Mark_Code
+
+	mov [gs:ebp], dword $A000
+	mov [gs:ebp + 4], dword $FFFF
+	mov [gs:ebp + 8], dword 4
 	invoke IMemory, IMemory.Mark_Code
 
 	mov [gs:ebp], dword $10000
@@ -111,6 +123,11 @@ Init_Code_table:
 	mov [gs:ebp + 8], dword 1
 	invoke IMemory, IMemory.Mark_Code
 
+	mov [gs:ebp], dword $25000
+	mov [gs:ebp + 4], dword $25FFF
+	mov [gs:ebp + 8], dword 1
+	invoke IMemory, IMemory.Mark_Code
+
 	ret
 
 Print_Code_Table:
@@ -139,11 +156,6 @@ Init_Memory_Table:
 	mov [gs:ebp + 4], dword $3FFFFF
 	invoke IMemory, IMemory.Create_Region
 
-	mov [gs:ebp], dword $204000
-	mov [gs:ebp + 4], dword $205FFF
-	mov [gs:ebp + 8], dword $7000
-	invoke IMemory, IMemory.Mark_Memory
-
 	ret
 
 Print_Memory_Table:
@@ -151,19 +163,19 @@ Print_Memory_Table:
 
 	.Loop:
 
-	mov eax, [fs:$200004 + ecx]
+	mov eax, [fs:$A004 + ecx]
 	Write_register eax
 
-	mov eax, [fs:$200004 + ecx + 4]
+	mov eax, [fs:$A004 + ecx + 4]
 	Write_register eax
 
-	mov eax, [fs:$200004 + ecx + 8]
+	mov eax, [fs:$A004 + ecx + 8]
 	Write_register eax
 
 	invoke ICoreVideo, ICoreVideo.New_Line
 
 	add ecx, 12
-	cmp [fs:$200004 + ecx + 4], dword 0
+	cmp [fs:$A004 + ecx + 4], dword 0
 	jne .Loop
 	invoke ICoreVideo, ICoreVideo.New_Line
 	ret

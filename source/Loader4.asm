@@ -119,11 +119,47 @@ GDT:
 		db 10010010b
 		db 11000000b
 		db 0
+	.tss:		; 7 - TSS
+		dw 103
+		dw TSS
+		db 0
+		db 10001001b
+		db 00000000b
+		db 0
 	gdt_end:
 
 GDT_Desc:
 	dw gdt_end - GDT - 1
 	dd GDT
+
+TSS:
+	.Link dd 0
+	.ESP0 dd 0
+	.SS0 dd 5 * 8
+	.ESP1 dd 0
+	.SS1 dd 0
+	.ESP2 dd 0
+	.SS2 dd 0
+	.CR3 dd $13000
+	.EIP dd 0
+	.EFLAGS dd 0
+	.EAX dd 0
+	.ECX dd 0
+	.EDX dd 0
+	.EBX dd 0
+	.ESP dd 0
+	.EBP dd 0
+	.ESI dd 0
+	.EDI dd 0
+	.ES dd 0
+	.CS dd 0
+	.SS dd 0
+	.DS dd 0
+	.FS dd 0
+	.GS dd 0
+	.LDT dd 3 * 8
+	.Trap dw 0
+	.IO_map dw 104
 
 Function_Cardinal_to_HexStr_32:
 	.Num equ dword [gs:ebp - 8]
@@ -173,5 +209,21 @@ Function_Cardinal_to_HexStr_32:
 
 	restore .Num
 	restore .HexStr
+
+Function_Write_string:
+	.Str equ dword [gs:ebp - 12] ; Str : FS_address
+	.Count equ dword [gs:ebp - 4] ; Count : Card32
+
+	push ebp
+	add ebp, 8
+
+	.Return:
+	xor eax, eax
+
+	pop ebp
+	ret
+
+	restore .Str
+	restore .Count
 
 include 'Loader3_p3.inc'
