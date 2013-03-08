@@ -120,18 +120,11 @@ Enter_Long_mode:
 	mov ax, 5 * 8
 	ltr ax
 
-	jmp 24:Begin
+	jmp 24:Init_core_system
 
 include 'Loader4_GDT.inc'
 
 use64
-
-Begin:
-	mov rbx, $B8000
-	mov [rbx], byte '6'
-	mov [rbx + 1], byte 1010b
-	mov [rbx + 2], byte '4'
-	mov [rbx + 3], byte 1010b
 
 Init_core_system:
 	mov rax, $30000
@@ -142,7 +135,18 @@ Init_core_system:
 	push rax
 	invoke IException, Install_ISR
 
+	int 0
+
 	hlt
 
 Procedure_INT0:
+	push Static.Text1
+	mov al, Static.End_text1 - Static.Text1
+	push rax
+	invoke IException, Write
+
 	hlt
+
+Static:
+	.Text1 db 'Hello world from division by zero'
+	.End_text1:

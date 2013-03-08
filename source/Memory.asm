@@ -1,4 +1,4 @@
-; Excp.asm - Exception handling module
+; Memory.asm - Memory manager module
 ; Written in 2013 by Congdm
 ;
 ; To the extent possible under law, the author(s) have dedicated
@@ -12,7 +12,7 @@
 include 'include\Header.inc'
 use64
 
-; IException
+; IMemory
 ; Function 1: Install_ISR (INT_num, Stack : Byte; ISR_entry : Address)
 
 jmp near Function_Init
