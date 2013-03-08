@@ -17,213 +17,132 @@ use32
 
 Rebase:
 	mov ax, 2 * 8
-	mov fs, ax
+	mov ds, ax
 
 	xor ecx, ecx
 	.Loop1:
-		mov eax, [fs:$37E00 + ecx]
-		mov [fs:$7E00 + ecx], eax
+		mov eax, [ds:$37E00 + ecx]
+		mov [ds:$7E00 + ecx], eax
 		add ecx, 4
 		cmp ecx, $1000
 		jb .Loop1
 
 	xor ecx, ecx
 	.Loop2:
-		mov eax, [fs:$40000 + ecx]
-		mov [fs:$20000 + ecx], eax
+		mov eax, [ds:$40000 + ecx]
+		mov [ds:$30000 + ecx], eax
 		add ecx, 4
 		cmp ecx, $10000
 		jb .Loop2
 
-	lgdt [fs:GDT_Desc]
-	jmp $8:Begin
+	lgdt [GDT_Desc]
+	jmp $8:Enter_Long_mode
 
-Begin:
+Const:
+	Lvl4_page_map_table = $2000
+	First_page_directory_pointer_table = $3000
+	First_page_directory = $4000
+	First_page_table = $5000
+
+	IA32_EFER_MSR = $C0000080
+
+Enter_Long_mode:
 	mov ax, 2 * 8
-	mov fs, ax
-
-	mov ax, 4 * 8
 	mov ds, ax
 	mov es, ax
+	mov ss, ax
+	mov esp, $2000
+
+	mov eax, cr4
+	bts eax, 5
+	mov cr4, eax
+
+	mov ebx, Lvl4_page_map_table
+	mov cr3, ebx
+
+	xor eax, eax
+	xor ecx, ecx
+	.Zero_fill_PML4:
+		mov [ebx + ecx], eax
+		add ecx, 4
+		cmp ecx, $1000
+		jb .Zero_fill_PML4
+
+	mov [ebx], dword First_page_directory_pointer_table + 1
+	mov ebx, First_page_directory_pointer_table
+
+	xor ecx, ecx
+	.Zero_fill_page_directory_pointer_table:
+		mov [ebx + ecx], eax
+		add ecx, 4
+		cmp ecx, $1000
+		jb .Zero_fill_page_directory_pointer_table
+
+	mov [ebx], dword First_page_directory + 1
+	mov ebx, First_page_directory
+
+	xor ecx, ecx
+	.Zero_fill_page_directory:
+		mov [ebx + ecx], eax
+		add ecx, 4
+		cmp ecx, $1000
+		jb .Zero_fill_page_directory
+
+	mov [ebx], dword First_page_table + 1
+	mov ebx, First_page_table
+
+	xor ecx, ecx
+	inc eax
+	.Identity_map_120000h_bytes:
+		mov [ebx + ecx], eax
+		mov [ebx + ecx + 4], dword 0
+		add ecx, 8
+		add eax, $1000
+		cmp ecx, $900
+		jb .Identity_map_120000h_bytes
+
+	xor eax, eax
+	.Zero_the_rest:
+		mov [ebx + ecx], eax
+		add ecx, 4
+		cmp ecx, $1000
+		jb .Zero_the_rest
+
+	mov ecx, IA32_EFER_MSR
+	rdmsr
+	bts eax, 8
+	wrmsr
+
+	mov eax, cr0
+	bts eax, 31
+	mov cr0, eax
 
 	mov ax, 5 * 8
-	mov ss, ax
-	mov esp, $FFFFFFE0
+	ltr ax
 
-	mov ax, 6 * 8
-	mov gs, ax
-	mov ebp, 16
+	jmp 24:Begin
 
-	mov [ds:8], byte ' '
+include 'Loader4_GDT.inc'
 
-	mov [fs:$4000], dword 0
-	mov [fs:$4004], dword GDT
-	mov [fs:$4008], dword 0
-	mov [fs:$400C], dword 0
-	mov [fs:$4010], dword 0
-	mov [fs:$4014], dword Function_Cardinal_to_HexStr_32
+use64
 
-	call Init_core_system
+Begin:
+	mov rbx, $B8000
+	mov [rbx], byte '6'
+	mov [rbx + 1], byte 1010b
+	mov [rbx + 2], byte '4'
+	mov [rbx + 3], byte 1010b
 
-Halt32:
+Init_core_system:
+	mov rax, $30000
+	call rax
+
+	push 1
+	mov rax, Procedure_INT0
+	push rax
+	invoke IException, Install_ISR
+
 	hlt
-	jmp Halt32
 
-Main_thread:
-	mov [fs:$B8000], byte '$'
-	mov [fs:$B8001], byte 1010b
-	jmp Halt32
-
-GDT:
-	.gdt_null:	; 0 - Null
-		dq 0
-	.gdt_code:	; 1 - CS
-		dw $01FF
-		dw 0
-		db 0
-		db 10011010b
-		db 11000000b
-		db 0
-	.gdt_gdata:	; 2 - FS
-		dw $FFFF
-		dw 0
-		db 0
-		db 10010010b
-		db 11001111b
-		db 0
-	.ldt1:		 ; 3 - Application LDT
-		dw $1F
-		dw 0
-		db 0
-		db 10000010b
-		db 01000000b
-		db 0
-	.data:		; 4 - DS
-		dw $1
-		dw $2000
-		db $1
-		db 10010010b
-		db 11000000b
-		db 0
-	.stack1:	; 5 - SS
-		dw $FFFE
-		dw $1000
-		db $1
-		db 10010110b
-		db 11001111b
-		db 0
-	.stack2:	; 6 - GS
-		dw $0
-		dw $1000
-		db $1
-		db 10010010b
-		db 11000000b
-		db 0
-	.tss:		; 7 - TSS
-		dw 103
-		dw TSS
-		db 0
-		db 10001001b
-		db 00000000b
-		db 0
-	gdt_end:
-
-GDT_Desc:
-	dw gdt_end - GDT - 1
-	dd GDT
-
-TSS:
-	.Link dd 0
-	.ESP0 dd 0
-	.SS0 dd 5 * 8
-	.ESP1 dd 0
-	.SS1 dd 0
-	.ESP2 dd 0
-	.SS2 dd 0
-	.CR3 dd $13000
-	.EIP dd 0
-	.EFLAGS dd 0
-	.EAX dd 0
-	.ECX dd 0
-	.EDX dd 0
-	.EBX dd 0
-	.ESP dd 0
-	.EBP dd 0
-	.ESI dd 0
-	.EDI dd 0
-	.ES dd 0
-	.CS dd 0
-	.SS dd 0
-	.DS dd 0
-	.FS dd 0
-	.GS dd 0
-	.LDT dd 3 * 8
-	.Trap dw 0
-	.IO_map dw 104
-
-Function_Cardinal_to_HexStr_32:
-	.Num equ dword [gs:ebp - 8]
-	.HexStr equ dword [gs:ebp - 4]
-
-	push ebp
-	add ebp, 8
-	push ebx
-	push ecx
-	push edx
-	push edi
-
-	mov edx, .Num
-	xor ebx, ebx
-	mov edi, .HexStr
-
-	mov cl, 7
-	.Loop:
-	mov eax, edx
-	shl cl, 2
-	shr eax, cl
-	shr cl, 2
-	and al, $F
-
-	cmp al, $A
-	jae .j1
-	add al, '0' - 0
-	jmp .j2
-	.j1: add al, 'A' - $A
-	.j2: inc ebx
-
-	mov [ds:edi + ebx - 1], al
-
-	.Continue_loop:
-	dec cl
-	jns .Loop
-
-	.Return:
-	xor eax, eax
-	pop edi
-	pop edx
-	pop ecx
-	pop ebx
-
-	pop ebp
-	ret
-
-	restore .Num
-	restore .HexStr
-
-Function_Write_string:
-	.Str equ dword [gs:ebp - 12] ; Str : FS_address
-	.Count equ dword [gs:ebp - 4] ; Count : Card32
-
-	push ebp
-	add ebp, 8
-
-	.Return:
-	xor eax, eax
-
-	pop ebp
-	ret
-
-	restore .Str
-	restore .Count
-
-include 'Loader3_p3.inc'
+Procedure_INT0:
+	hlt

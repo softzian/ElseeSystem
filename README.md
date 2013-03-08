@@ -2,18 +2,16 @@ ElseeSystem
 ===========
 Note: The main reason I put this on GitHub is for backup purpose
 
-A Simple Hobby x86 "OS" for learning purpose
+A Simple Hobby x86-64 "OS" for learning purpose
 
-It isn't an OS yet and for now, this project only provide some basic modules in order to develop programs that run without OS (run directly on hardware). It will evolve to an OS later.
+Under rework for architecture change (IA-32 -> IA-32e).
 
 Design goals:
-  - Support PC/AT Compatible System with IA-32 processor
+  - Run in Intel 64 (was IA-32 before, I will make a 32 bits x86 version later)
   - Modular system
-  - Direct hardware access
+  - Only ring 0
   
-See doc/INSTALL.txt for install guide
-
-See Wiki or doc for more infomation (this project is under major changes so doc maybe outdated)
+Current documents are outdated.
 
 My references:
   - http://wiki.osdev.org ; An useful source for code examples and information

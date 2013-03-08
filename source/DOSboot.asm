@@ -19,51 +19,57 @@ Begin:
 	push $3000
 	call Procedure_Load_file
 
-	push Var.Memory_filename
+	push Var.Excp_filename
 	push $1000
 	push $0
 	push $4000
 	call Procedure_Load_file
 
-	push Var.Module_filename
-	push $1000
-	push $1000
-	push $4000
-	call Procedure_Load_file
+	;push Var.Memory_filename
+	;push $1000
+	;push $0
+	;push $4000
+	;call Procedure_Load_file
 
-	push Var.Video_filename
-	push $1000
-	push $2000
-	push $4000
-	call Procedure_Load_file
+	;push Var.Module_filename
+	;push $1000
+	;push $1000
+	;push $4000
+	;call Procedure_Load_file
 
-	push Var.8259A_filename
-	push $1000
-	push $3000
-	push $4000
-	call Procedure_Load_file
+	;push Var.Video_filename
+	;push $1000
+	;push $2000
+	;push $4000
+	;call Procedure_Load_file
 
-	push Var.Thread_filename
-	push $1000
-	push $4000
-	push $4000
-	call Procedure_Load_file
+	;push Var.8259A_filename
+	;push $1000
+	;push $3000
+	;push $4000
+	;call Procedure_Load_file
+
+	;push Var.Thread_filename
+	;push $1000
+	;push $4000
+	;push $4000
+	;call Procedure_Load_file
 
 	push ds
 	xor ax, ax
 	mov ds, ax
-	mov [$1000], ax
-	mov [$1002], ax
+	mov [$F000], ax
+	mov [$F002], ax
 	mov ax, $E801
 	int $15
 	test ax, ax
 	jz .Use_CX
-	mov [$1000], ax
-	mov [$1002], bx
+	mov [$F000], ax
+	mov [$F002], bx
 	jmp .j1
 	.Use_CX:
-	mov [$1000], cx
-	mov [$1002], dx
+	mov [$F000], cx
+	mov [$F002], dx
 	.j1: pop ds
 
 	jmp Switch_to_Protected_Mode
@@ -150,6 +156,7 @@ Procedure_Load_file:
 
 Var:
 	.Loader4_filename db 'Loader4.bin',0,'$'
+	.Excp_filename db 'Excp.bin',0,'$'
 	.Memory_filename db 'Memory.bin',0,'$'
 	.Module_filename db 'Module.bin',0,'$'
 	.Video_filename db 'CoreVGA.bin',0,'$'
@@ -228,14 +235,14 @@ enable_A20:
 GDT:
 	.gdt_null:	; 0 - Null
 		dq 0
-	.gdt_code:	; 1 - CS
-		dw $01FF
+	.gdt_code:	; 1 - Code
+		dw $FFFF
 		dw 0
 		db 0
 		db 10011010b
-		db 11000000b
+		db 11001111b
 		db 0
-	.gdt_gdata:	; 2 - FS
+	.gdt_gdata:	; 2 - Data
 		dw $FFFF
 		dw 0
 		db 0
