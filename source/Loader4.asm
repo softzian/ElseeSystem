@@ -30,7 +30,7 @@ Rebase:
 	xor ecx, ecx
 	.Loop2:
 		mov eax, [ds:$40000 + ecx]
-		mov [ds:$30000 + ecx], eax
+		mov [ds:$20000 + ecx], eax
 		add ecx, 4
 		cmp ecx, $10000
 		jb .Loop2
@@ -92,7 +92,7 @@ Enter_Long_mode:
 	mov ebx, First_page_table
 
 	xor ecx, ecx
-	inc eax
+	add eax, 1
 	.Identity_map_120000h_bytes:
 		mov [ebx + ecx], eax
 		mov [ebx + ecx + 4], dword 0
@@ -127,26 +127,32 @@ include 'Loader4_GDT.inc'
 use64
 
 Init_core_system:
-	mov rax, $30000
+	mov rax, $20000
 	call rax
 
-	push 1
-	mov rax, Procedure_INT0
-	push rax
-	invoke IException, Install_ISR
+	mov rax, $21000
+	call rax
 
-	int 0
+	mov rbx, $1993
+	mov rcx, $100000000
 
-	hlt
+	push rbx
+	push rcx
+	invoke IException, Card64_to_hex
 
-Procedure_INT0:
-	push Static.Text1
-	mov al, Static.End_text1 - Static.Text1
-	push rax
-	invoke IException, Write
+	push rcx
+	push 16
+	invoke IException, Write_line
+
+	push rbx
+	push rcx
+	invoke IException, Card64_to_decimal
+
+	push rcx
+	push 20
+	invoke IException, Write_line
 
 	hlt
 
 Static:
 	.Text1 db 'Hello world from division by zero'
-	.End_text1:

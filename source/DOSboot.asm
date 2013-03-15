@@ -25,11 +25,11 @@ Begin:
 	push $4000
 	call Procedure_Load_file
 
-	;push Var.Memory_filename
-	;push $1000
-	;push $0
-	;push $4000
-	;call Procedure_Load_file
+	push Var.Memory_filename
+	push $1000
+	push $1000
+	push $4000
+	call Procedure_Load_file
 
 	;push Var.Module_filename
 	;push $1000
