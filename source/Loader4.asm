@@ -136,6 +136,8 @@ Init_core_system:
 	mov rbx, $1993
 	mov rcx, $100000000
 
+	mov rsp, $100000000
+
 	push rbx
 	push rcx
 	invoke IException, Card64_to_hex

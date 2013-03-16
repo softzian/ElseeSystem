@@ -1,4 +1,4 @@
-; Memory.asm - Memory manager module
+; Thread.asm - Memory manager module
 ; Written in 2013 by Congdm
 ;
 ; To the extent possible under law, the author(s) have dedicated
@@ -12,39 +12,24 @@
 include 'include\Header.inc'
 use64
 
-; IMemory
+; IThread
 ; Function 1: Allocate (Size : Card64) : Address
 ; Function 2: Free (Ptr : Address)
 
 jmp near Function_Init
 dq Header
 Interface:
-	dq Function_Allocate
+	dq Function_New_thread
 	dq Function_Free
 Header:
 	.Module_addr dq 0
 Const:
 	System_data = $10000
-	Total_RAM = 0
-	Free_RAM = 8
-	First_free_phy_page = 16
-	Page_fault_count = 24
 
 	Lvl4_page_table = $2000
-	First_page_directory_pointer_table = $3000
-	First_page_directory = $4000
-	First_page_table = $5000
-
-	; Use 4K from $11000 for physical memory table (bitmap)
-	Physical_memory_table = $11000
-
-	; We will reserved the area from 7F80 0000 0000 to 7FFF FFFF FFFF for
-	; the virtual memory allocator's data (this allocator only manage lower half)
-	; That means using the entire entry 255 of Lvl4 table
-	Virtual_allocator = $7F8000000000
-
-	; We used one virtual page ($120000) as a window to look at physical memory
 	Window_page = $120000
+
+	Thread_stack = $7F00000000000000
 
 Function_Init:
 	mov rbx, rax
@@ -395,8 +380,8 @@ Go_to_lower_page_table:
 
 	restore .Index
 
-Function_Allocate:	; Size is in 4K block
-	.Size equ [rbp + 16] ; Size : Card64
+Function_Allocate:
+	.Size equ [rbp + 16]
 
 	push rbp
 	mov rbp, rsp
@@ -404,7 +389,6 @@ Function_Allocate:	; Size is in 4K block
 
 	mov rbx, Virtual_allocator
 	mov rax, .Size
-	shl rax, 12
 
 	mov r15, [rbx]
 	add [rbx], rax
