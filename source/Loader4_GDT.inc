@@ -52,7 +52,7 @@ TSS64:
 	dd 0
 	dd 0
 	.IST1 dq $10000
-	.IST2 dq $10000
+	.IST2 dq $F000
 	.IST3 dq $10000
 	.IST4 dq $10000
 	.IST5 dq $10000

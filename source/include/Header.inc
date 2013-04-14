@@ -1,3 +1,12 @@
+; System data
+System_data = $10000
+Total_RAM = 0
+Free_RAM = 8
+First_free_phy_page = 16
+Page_fault_count = 24
+Error_handler = 32
+; End System data
+
 macro invoke i*, x*
 {
 	mov rax, [dword i + 8]
@@ -49,6 +58,16 @@ macro Error_return
 	jmp .Return
 }
 
+macro Raise_error x, func_id, mod_id
+{
+	.Error#x#:
+	mov rax, x
+	mov rbx, func_id
+	mov rcx, [mod_id]
+	mov rdx, [mod_id + 8]
+	jmp qword [dword System_data + Error_handler]
+}
+
 MASK_12_LOW_BITS = $FFFFFFFFFFFFF000
 
 IException = $100000
@@ -61,3 +80,27 @@ IException.Card64_to_decimal = 32
 IMemory = $100010
 IMemory.Allocate = 0
 IMemory.Free = 8
+IMemory.Allocate_physical_page = 16
+IMemory.Free_physical_page = 24
+IMemory.Map_one_page = 32
+
+IModule = $100020
+IModule.Register_module = 0
+IModule.Find_module = 8
+IModule.New_address_space = 16
+IModule.Switch_address_space = 24
+IModule.Get_thread_table = 32
+IModule.Set_thread_table = 40
+
+IInterrupt = $100030
+IInterrupt.Install_IRQ_direct_handler = 0
+IInterrupt.Mask_all_IRQ = 8
+IInterrupt.Enable_IRQ = 16
+IInterrupt.Disable_IRQ = 24
+IInterrupt.Send_EOI = 32
+
+IThread = $100040
+IThread.New_thread = 0
+IThread.Start_thread = 8
+IThread.Enable_threading = 16
+IThread.Disable_threading = 24

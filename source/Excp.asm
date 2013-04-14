@@ -16,6 +16,8 @@ use64
 ; Function 1: Install_ISR (INT_num, Stack : Byte; ISR_entry : Address)
 ; Function 2: Write (var Text : Array of Ansi_char; Count : Byte)
 ; Function 3: Write_line (var Text : Array of Ansi_char; Count : Byte)
+; Function 4: Card64_to_hex (Num : Card64; out Hex_str : Array [16] of Ansi_char)
+; Function 5: Card64_to_decimal (Num : Card64; out Dec_str : Array [20] of Ansi_char) : Card64;
 
 jmp near Function_Init
 dq Header
@@ -28,6 +30,7 @@ Interface:
 	dq Function_Card64_to_decimal
 Header:
 	.Module_addr dq 0
+	.Module_id dq 1, 0
 
 Const:
 	System_data = $10000
@@ -201,7 +204,7 @@ Function_Write_line: ; Function 3
 
 Function_Card64_to_hex:
 	.Num equ qword [rbp + 24] ; Num : Card64
-	.Hex_str equ qword [rbp + 16] ; var Hex_str : Array [1..16] of Ansi_char
+	.Hex_str equ qword [rbp + 16] ; out Hex_str : Array [16] of Ansi_char
 
 	push rbp
 	mov rbp, rsp
@@ -245,7 +248,7 @@ Function_Card64_to_hex:
 
 Function_Card64_to_decimal:
 	.Num equ qword [rbp + 24] ; Num : Card64
-	.Dec_str equ qword [rbp + 16] ; var Dec_str : Array [1..20] of Ansi_char
+	.Dec_str equ qword [rbp + 16] ; out Dec_str : Array [20] of Ansi_char
 
 	push rbp
 	mov rbp, rsp

@@ -15,21 +15,22 @@ use64
 ; IMemory
 ; Function 1: Allocate (Size : Card64) : Address
 ; Function 2: Free (Ptr : Address)
+; Function 3: Allocate_physical_page : Physical_address
+; Function 4: Free_physical_page (Phy_page : Physical_address)
+; Function 5: Map_one_page (Phy_page : Physical_address; Vir_page : Address)
 
 jmp near Function_Init
 dq Header
 Interface:
 	dq Function_Allocate
 	dq Function_Free
+	dq Function_Allocate_physical_page
+	dq Function_Free_physical_page
+	dq Function_Map_one_page
 Header:
 	.Module_addr dq 0
+	.Module_id dq 2, 0
 Const:
-	System_data = $10000
-	Total_RAM = 0
-	Free_RAM = 8
-	First_free_phy_page = 16
-	Page_fault_count = 24
-
 	Lvl4_page_table = $2000
 	First_page_directory_pointer_table = $3000
 	First_page_directory = $4000
@@ -119,15 +120,6 @@ Init_physical_allocator:
 	invoke IException, Install_ISR
 
 Init_virtual_memory_allocator:
-	; Preparing page tables for Virtual memory allocator area
-	call Allocate_one_physical_page
-
-	push r15
-	mov rax, Virtual_allocator
-	push rax
-	call Map_one_page
-
-	; Init data for Virtual memory allocator
 	mov rdx, Virtual_allocator
 	mov rax, $100000000
 	mov [rdx], rax
@@ -135,7 +127,47 @@ Init_virtual_memory_allocator:
 
 	jmp Function_Init.Return
 
-Allocate_one_physical_page:
+; ------------------------------------------------------------------------ ;
+;                             PUBLIC FUNCTIONS                             ;
+; ------------------------------------------------------------------------ ;
+
+Function_Allocate: ; Function 1
+	.Size equ [rbp + 16] ; Size : Card64 // Size is in 4K block
+
+	push rbp
+	mov rbp, rsp
+
+	mov rax, .Size
+	test rax, rax
+	jz .Error1
+
+	mov r11, Virtual_allocator
+	shl rax, 12
+
+	mov r15, [r11]
+	add [r11], rax
+	xor rax, rax
+
+	.Return:
+	pop rbp
+	ret 8
+
+	Raise_error 1, 1, Header.Module_id
+
+	restore .Size
+
+Function_Free: ; Function 2
+	.Ptr equ [rbp + 16] ; Ptr : Address
+
+	xor rax, rax
+	ret 8
+
+	restore .Ptr
+
+Function_Allocate_physical_page: ; Function 3
+	push rbp
+	mov rbp, rsp
+
 	mov rax, System_data
 	mov rax, [rax + Total_RAM]
 
@@ -171,6 +203,7 @@ Allocate_one_physical_page:
 	xor rax, rax
 
 	.Return:
+	pop rbp
 	ret
 
 	.Out_of_memory:
@@ -182,7 +215,7 @@ Allocate_one_physical_page:
 	cli
 	hlt
 
-Free_one_physical_page:
+Function_Free_physical_page: ; Function 4
 	.Phy_page equ qword [rbp + 16] ; Phy_page : Physical_address
 
 	push rbp
@@ -214,19 +247,15 @@ Free_one_physical_page:
 	pop rbp
 	ret 8
 
-	.Error1:
-	mov rax, 1
-	Error_return
-
-	.Error2:
-	mov rax, 2
-	Error_return
+	Raise_error 1, 4, Header.Module_id
+	Raise_error 2, 4, Header.Module_id
 
 	restore .Phy_page
 
-Map_one_page:
-	.Phy_page equ qword [rbp + 24] ; Phy_page : Physical_address
-	.Vir_page equ qword [rbp + 16] ; Vir_page : Virtual_address
+Function_Map_one_page: ; Function 5
+	.Phy_page equ qword [rbp + 32] ; Phy_page : Physical_address
+	.Vir_page equ qword [rbp + 24] ; Vir_page : Address
+	.Flag equ qword [rbp + 16] ; Flag : Card64
 
 	push rbp
 	mov rbp, rsp
@@ -239,14 +268,23 @@ Map_one_page:
 
 	mov rcx, .Phy_page
 	test rcx, $FFF
-	jnz .Error1
+	jnz .Error2	; Invalid frame address
+
+	mov rax, System_data
+	mov rax, [rax + Total_RAM]
+	shl rax, 12
+	cmp rcx, rax
+	jae .Error2	; Address > Max memory
 
 	cmp rbx, $200000
 	jae .Case2
 
 	.Case1:
 	shr rbx, 12 - 3
-	or rcx, 1
+	mov rax, .Flag
+	and rax, $102
+	inc rax
+	or rcx, rax
 	mov [First_page_table + rbx], rcx
 	jmp .Finish
 
@@ -255,7 +293,8 @@ Map_one_page:
 	push rax
 	mov rax, Window_page
 	push rax
-	call Map_one_page
+	push $100
+	call Function_Map_one_page
 
 	mov rax, rbx
 	shr rax, 12 + 9 * 3
@@ -280,7 +319,10 @@ Map_one_page:
 
 	shr rbx, 12
 	and rbx, $1FF
-	or rcx, 1
+	mov rax, .Flag
+	and rax, $102
+	inc rax
+	or rcx, rax
 	mov rax, Window_page
 
 	mov [rax + rbx * 8], rcx
@@ -294,14 +336,18 @@ Map_one_page:
 	pop rcx
 	pop rbx
 	pop rbp
-	ret 16
+	ret 24
 
-	.Error1:
-	mov rax, -1
-	Error_return
+	Raise_error 1, 5, Header.Module_id
+	Raise_error 2, 5, Header.Module_id
 
 	restore .Phy_page
 	restore .Vir_page
+	restore .Flag
+
+; ------------------------------------------------------------------------ ;
+;                             PRIVATE FUNCTIONS                            ;
+; ------------------------------------------------------------------------ ;
 
 Get_phy_addr:
 	.Vir_page equ qword [rbp + 16] ; Vir_page : Virtual_address
@@ -310,9 +356,6 @@ Get_phy_addr:
 	mov rbp, rsp
 
 	mov rax, .Vir_page
-	test rax, $FFF
-	jnz .Error1	; Invalid address
-
 	cmp rax, $200000
 	jae .Case2
 
@@ -332,10 +375,6 @@ Get_phy_addr:
 	pop rbp
 	ret 8
 
-	.Error1:
-	mov rax, -1
-	Error_return
-
 	restore .Vir_page
 
 Go_to_lower_page_table:
@@ -345,8 +384,6 @@ Go_to_lower_page_table:
 	mov rbp, rsp
 
 	mov rax, .Index
-	cmp rax, $1FF
-	ja .Error1
 
 	mov r11, Window_page
 	bt qword [r11 + rax * 8], 0
@@ -357,22 +394,24 @@ Go_to_lower_page_table:
 
 	push rax
 	push r11
-	call Map_one_page
+	push $100
+	call Function_Map_one_page
 
 	jmp .Finish
 
 	.Create_page_table:
-	call Allocate_one_physical_page
+	call Function_Allocate_physical_page
 
-	or r15, 1
+	mov r12, r15
+	or r15, 3
 	mov r11, Window_page
 	mov rax, .Index
 	mov [r11 + rax * 8], r15
 
-	btr r15, 0
-	push r15
+	push r12
 	push r11
-	call Map_one_page
+	push $100
+	call Function_Map_one_page
 
 	mov r11, Window_page
 	xor rax, rax
@@ -389,33 +428,11 @@ Go_to_lower_page_table:
 	pop rbp
 	ret 8
 
-	.Error1:
-	mov rax, -1
-	Error_return
-
 	restore .Index
 
-Function_Allocate:	; Size is in 4K block
-	.Size equ [rbp + 16] ; Size : Card64
-
-	push rbp
-	mov rbp, rsp
-	push rbx
-
-	mov rbx, Virtual_allocator
-	mov rax, .Size
-	shl rax, 12
-
-	mov r15, [rbx]
-	add [rbx], rax
-	xor rax, rax
-
-	pop rbp
-	ret 8
-
-Function_Free:
-	xor rax, rax
-	ret 8
+; ------------------------------------------------------------------------ ;
+;                             INTERRUPT HANDLER                            ;
+; ------------------------------------------------------------------------ ;
 
 Page_fault_handler:
 	bt qword [rsp], 0
@@ -426,13 +443,62 @@ Page_fault_handler:
 	mov rbx, System_data
 	inc qword [rbx + Page_fault_count]
 
-	call Allocate_one_physical_page
+	mov rax, cr2
+	mov rcx, $FFFF800000000000
+	cmp rax, rcx
+	jb .Case1
+
+	mov rcx, $FFFF808000000000
+	cmp rax, rcx
+	jb .Case2
+
+	mov rcx, $FFFFFF8000000000
+	cmp rax, rcx
+	jb .Case1
+
+	jmp .Case3
+
+	.Case1: ; Normal
+	call Function_Allocate_physical_page
 
 	push r15
 	mov rax, cr2
 	and rax, MASK_12_LOW_BITS
 	push rax
-	call Map_one_page
+	push $100
+	call Function_Map_one_page
+
+	jmp .Return
+
+	.Case2: ; Process data area
+	mov rbx, Lvl4_page_table
+	mov rcx, [rbx + 256 * 8]
+	bt rcx, 0
+	jnc .Halt
+
+	call Function_Allocate_physical_page
+
+	push r15
+	and rax, MASK_12_LOW_BITS
+	push rax
+	push $102
+	call Function_Map_one_page
+
+	jmp .Return
+
+	.Case3: ; Normal thread stack
+	mov rbx, Lvl4_page_table
+	mov rcx, [rbx + 511 * 8]
+	bt rcx, 0
+	jnc .Halt
+
+	call Function_Allocate_physical_page
+
+	push r15
+	and rax, MASK_12_LOW_BITS
+	push rax
+	push $102
+	call Function_Map_one_page
 
 	.Return:
 	Load_all_registers

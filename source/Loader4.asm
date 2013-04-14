@@ -133,28 +133,52 @@ Init_core_system:
 	mov rax, $21000
 	call rax
 
-	mov rbx, $1993
-	mov rcx, $100000000
+	mov rax, $22000
+	call rax
 
-	mov rsp, $100000000
+	push $7000
+	push 4
+	push 0
+	invoke IModule, Register_module
 
-	push rbx
-	push rcx
+	push r15
+	invoke IModule, New_address_space
+
+	push 2
+	invoke IModule, New_address_space
+
+	push 2
+	push 1
+	invoke IModule, Switch_address_space
+
+	mov rbx, $FFFF800000000000
+	mov rax, $FF00FF00FF00FF00
+	mov [rbx], rax
+
+	push 2
+	push 2
+	invoke IModule, Switch_address_space
+
+	push qword [rbx]
+	push 0
 	invoke IException, Card64_to_hex
 
-	push rcx
+	push 0
 	push 16
 	invoke IException, Write_line
 
-	push rbx
-	push rcx
-	invoke IException, Card64_to_decimal
+	push 2
+	push 1
+	invoke IModule, Switch_address_space
 
-	push rcx
-	push 20
+	push qword [rbx]
+	push 0
+	invoke IException, Card64_to_hex
+
+	push 0
+	push 16
 	invoke IException, Write_line
 
 	hlt
 
 Static:
-	.Text1 db 'Hello world from division by zero'

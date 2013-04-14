@@ -1,4 +1,4 @@
-; Thread.asm - Memory manager module
+; Thread.asm - Threading module
 ; Written in 2013 by Congdm
 ;
 ; To the extent possible under law, the author(s) have dedicated
@@ -13,28 +13,49 @@ include 'include\Header.inc'
 use64
 
 ; IThread
-; Function 1: Allocate (Size : Card64) : Address
-; Function 2: Free (Ptr : Address)
+; Function 1: New_thread (Module, Addr_space : Card64; Entry_point : Address) : Card64
+; Function 2: Start_thread (Module, Thread : Card64)
+; Function 3: Enable_threading
+; Function 4: Disable_threading
 
 jmp near Function_Init
 dq Header
 Interface:
 	dq Function_New_thread
-	dq Function_Free
+	dq Function_Start_thread
+	dq Function_Enable_threading
+	dq Function_Disable_threading
 Header:
 	.Module_addr dq 0
+	.Module_id dq 5, 0
 Const:
 	System_data = $10000
 
 	Lvl4_page_table = $2000
-	Window_page = $120000
+	Window_page = $122000
 
-	Thread_stack = $7F00000000000000
+	Thread_stack = $FFFFFF8000000000
+
+	SizeOf_Thread_table = $1000
+	SizeOf_TTE = 64
+	TTE_State = 0
+	TTE_Module = 8
+	TTE_Addr_space = 16
+	TTE_Lvl3_page_table = 24
+	TTE_RSP = 32
+	TTE_Next_thread = 40
+	TTE_Prev_thread = 48
+
+	RUNNING = 1
+	BLOCKED = 2
+	READY = 3
+
+	ENABLE_THREADING_FLAG = 0
 
 Function_Init:
 	mov rbx, rax
 	lea rsi, [rax + Interface]
-	mov rax, IMemory
+	mov rax, IThread
 	mov [rax], rbx
 	mov [rax + 8], rsi
 	mov [Header.Module_addr], rbx
@@ -46,392 +67,353 @@ Function_Init:
 		cmp rax, Header - Interface
 		jb .Loop
 
-	jmp Init_physical_allocator
-
 	.Return:
 	xor rax, rax
 	ret
 
-Init_physical_allocator:
-	mov r8, System_data
-	movzx rax, word [dword $F000]
-	shr rax, 2
-	mov [r8 + Total_RAM], rax
-	mov [r8 + Free_RAM], rax
-	xor rax, rax
-	mov [r8 + Page_fault_count], rax
+Function_New_thread:
+	.Module equ qword [rbp + 32]
+	.Addr_space equ qword [rbp + 24]
+	.Entry_point equ qword [rbp + 16]
 
-	xor rcx, rcx
-	mov rsi, Physical_memory_table
-	.Loop1:
-		mov [rsi + rcx * 8], rax
-		inc rcx
-		cmp rcx, $1000 / 8
-		jb .Loop1
+	.Result equ qword [rbp - 8]
 
-	; Reserved the first $30000
-	xor rcx, rcx
-	.Loop2:
-		bts qword [rsi], rcx
-		inc rcx
-		cmp rcx, $30
-		jb .Loop2
+	enter 8, 0
+	push rbx
 
-	; Reserved the area between $9F000 and $120000
-	mov rdx, $10
-	mov rcx, $1F
-	mov rax, $81
-	.Loop3:
-		bts qword [rsi + rdx], rcx
-		inc rcx
-		cmp rcx, $40
-		jb .Next3
+	bts word [Static.Lock], 0
 
-		xor rcx, rcx
-		add rdx, 8
+	mov rbx, .Module
 
-		.Next3:
-		dec rax
-		jnz .Loop3
+	push rbx
+	invoke IModule, Get_thread_table
 
-	sub qword [r8 + Free_RAM], $B1
+	test rax, rax
+	jz .Find_free_entry
 
-	push 14
-	push 1
-	mov rax, rbx
-	add rax, Page_fault_handler
-	push rax
-	invoke IException, Install_ISR
-
-Init_virtual_memory_allocator:
-	; Preparing page tables for Virtual memory allocator area
-	call Allocate_one_physical_page
+	.Create_thread_table:
+	push SizeOf_Thread_table / $1000
+	invoke IMemory, Allocate
 
 	push r15
-	mov rax, Virtual_allocator
-	push rax
-	call Map_one_page
 
-	; Init data for Virtual memory allocator
-	mov rdx, Virtual_allocator
-	mov rax, $100000000
-	mov [rdx], rax
-	mov [rdx + 8], rax
+	push rbx
+	push r15
+	invoke IModule, Set_thread_table
 
-	jmp Function_Init.Return
+	pop r15
+	xor rax, rax
+	xor r11, r11
+	.Clear_thread_table:
+		mov [r15 + r11], rax
+		add r11, 8
+		cmp r11, SizeOf_Thread_table
+		jb .Clear_thread_table
 
-Allocate_one_physical_page:
-	mov rax, System_data
-	mov rax, [rax + Total_RAM]
-
-	mov r11, Physical_memory_table
-	xor r12, r12
-	xor r13, r13
-	.Find_free_page:
-		bt qword [r11 + r12], r13
-		jnc .Found
-
-		inc r13
-		cmp r13, $40
-		jb .Next
-
-		xor r13, r13
-		add r12, 8
-
-		.Next:
-		dec rax
-		jnz .Find_free_page
-		jmp .Out_of_memory
+	.Find_free_entry:
+	xor r11, r11
+	.Loop1:
+		mov rax, [r15 + r11 + TTE_State]
+		test rax, rax
+		jz .Found
+		add r11, SizeOf_TTE
+		cmp r11, SizeOf_Thread_table
+		jb .Loop1
+		jmp .Error1
 
 	.Found:
-	bts qword [r11 + r12], r13
+	mov [r15 + r11 + TTE_Module], rbx
+	lea rbx, [r15 + r11]
+	mov .Result, r11
+	mov rax, .Addr_space
+	mov [rbx + TTE_Addr_space], rax
 
-	shl r12, 3
-	add r12, r13
-	mov r15, r12
-	shl r15, 12
+	invoke IMemory, Allocate_physical_page
 
-	mov rax, System_data
-	dec qword [rax + Free_RAM]
+	mov [rbx + TTE_Lvl3_page_table], r15
+
+	push r15
+	push Window_page
+	push $100
+	invoke IMemory, Map_one_page
+
+	xor r11, r11
+	.Clear_lvl3_page_table:
+		mov [Window_page + r11], dword 0
+		add r11, 4
+		cmp r11, $1000
+		jb .Clear_lvl3_page_table
+
+	invoke IMemory, Allocate_physical_page
+
+	mov rax, r15
+	or rax, 3
+	mov r11, Window_page
+	mov [r11 + 511 * 8], rax
+
+	push r15
+	push r11
+	push $100
+	invoke IMemory, Map_one_page
+
+	xor r11, r11
+	.Clear_lvl2_page_table:
+		mov [Window_page + r11], dword 0
+		add r11, 4
+		cmp r11, $1000
+		jb .Clear_lvl2_page_table
+
+	invoke IMemory, Allocate_physical_page
+
+	mov rax, r15
+	or rax, 3
+	mov r11, Window_page
+	mov [r11 + 511 * 8], rax
+
+	push r15
+	push r11
+	push $100
+	invoke IMemory, Map_one_page
+
+	xor r11, r11
+	.Clear_lvl1_page_table:
+		mov [Window_page + r11], dword 0
+		add r11, 4
+		cmp r11, $1000
+		jb .Clear_lvl1_page_table
+
+	invoke IMemory, Allocate_physical_page
+
+	mov rax, r15
+	or rax, 3
+	mov r11, Window_page
+	mov [r11 + 511 * 8], rax
+
+	push r15
+	push r11
+	push $100
+	invoke IMemory, Map_one_page
+
+	mov r11, Window_page + $FF8
+	mov rax, .Entry_point
+	mov [r11], rax
+	mov r12, 15
 	xor rax, rax
+	.Loop2:
+		sub r11, 8
+		mov [r11], rax
+		dec r12
+		jnz .Loop2
+
+	mov rax, $FFFFFFFFFFFFFF80
+	mov [rbx + TTE_RSP], rax
+
+	xor rax, rax
+	mov r15, .Result
+	shr r15, 6
+	inc r15
+
+	btr word [Static.Lock], 0
 
 	.Return:
-	ret
+	pop rbx
+	leave
+	ret 24
 
-	.Out_of_memory:
-	mov rbx, [Header.Module_addr]
-	add rbx, Static.Text2
-	push rbx
-	push 37
-	invoke IException, Write
-	cli
-	hlt
+	Raise_error 1, 1, Header.Module_id
 
-Free_one_physical_page:
-	.Phy_page equ qword [rbp + 16] ; Phy_page : Physical_address
+	restore .Module
+	restore .Addr_space
+	restore .Entry_point
+	restore .Result
 
-	push rbp
-	mov rbp, rsp
+Function_Start_thread:
+	.Module equ qword [rbp + 24]
+	.Thread equ qword [rbp + 16]
 
-	mov r13, .Phy_page
-	test r13, $FFF
-	jnz .Error1	; Invalid address
+	enter 0, 0
 
-	shr r13, 12
-	mov rax, System_data
-	cmp r13, [rax + Total_RAM]
-	jae .Error2	; Address > Max memory
+	mov rax, .Module
+	push rax
+	invoke IModule, Get_thread_table
 
-	inc qword [rax + Free_RAM]
+	mov r11, .Thread
+	dec r11
+	shl r11, 6
+	add r11, r15
 
-	mov r12, r13
-	shr r12, 6
-	shl r12, 6
-	sub r13, r12
-	shr r12, 3
+	mov rax, READY
+	mov [r11 + TTE_State], rax
 
-	mov r11, Physical_memory_table
-	btr qword [r11 + r12], r13
+	mov rax, [Static.First_thread]
+	test rax, rax
+	jz .First_thread_case
 
-	xor rax, rax
+	mov r12, [Static.Last_thread]
+	mov [r12 + TTE_Next_thread], r11
+	mov [r11 + TTE_Prev_thread], r12
+	mov [Static.Last_thread], r11
 
-	.Return:
-	pop rbp
-	ret 8
-
-	.Error1:
-	mov rax, 1
-	Error_return
-
-	.Error2:
-	mov rax, 2
-	Error_return
-
-	restore .Phy_page
-
-Map_one_page:
-	.Phy_page equ qword [rbp + 24] ; Phy_page : Physical_address
-	.Vir_page equ qword [rbp + 16] ; Vir_page : Virtual_address
-
-	push rbp
-	mov rbp, rsp
-	push rbx
-	push rcx
-
-	mov rbx, .Vir_page
-	test rbx, $FFF
-	jnz .Error1	; Invalid address
-
-	mov rcx, .Phy_page
-	test rcx, $FFF
-	jnz .Error1
-
-	cmp rbx, $200000
-	jae .Case2
-
-	.Case1:
-	shr rbx, 12 - 3
-	or rcx, 1
-	mov [First_page_table + rbx], rcx
+	mov r12, [Static.First_thread]
+	mov [r12 + TTE_Prev_thread], r11
+	mov [r11 + TTE_Next_thread], r12
 	jmp .Finish
 
-	.Case2:
-	mov rax, Lvl4_page_table
-	push rax
-	mov rax, Window_page
-	push rax
-	call Map_one_page
-
-	mov rax, rbx
-	shr rax, 12 + 9 * 3
-	and rax, $1FF
-
-	push rax
-	call Go_to_lower_page_table
-
-	mov rax, rbx
-	shr rax, 12 + 9 * 2
-	and rax, $1FF
-
-	push rax
-	call Go_to_lower_page_table
-
-	mov rax, rbx
-	shr rax, 12 + 9 * 1
-	and rax, $1FF
-
-	push rax
-	call Go_to_lower_page_table
-
-	shr rbx, 12
-	and rbx, $1FF
-	or rcx, 1
-	mov rax, Window_page
-
-	mov [rax + rbx * 8], rcx
+	.First_thread_case:
+	mov [Static.First_thread], r11
+	mov [Static.Last_thread], r11
+	mov [r11 + TTE_Prev_thread], r11
+	mov [r11 + TTE_Next_thread], r11
 
 	.Finish:
-	mov rax, .Vir_page
-	invlpg [rax]
 	xor rax, rax
 
 	.Return:
-	pop rcx
-	pop rbx
-	pop rbp
+	leave
 	ret 16
 
-	.Error1:
-	mov rax, -1
-	Error_return
+	restore .Module
+	restore .Thread
 
-	restore .Phy_page
-	restore .Vir_page
+Function_Enable_threading:
+	bts qword [Static.Flag], ENABLE_THREADING_FLAG
+	ret
 
-Get_phy_addr:
-	.Vir_page equ qword [rbp + 16] ; Vir_page : Virtual_address
+Function_Disable_threading:
+	btr qword [Static.Flag], ENABLE_THREADING_FLAG
+	ret
 
+; ------------------------------------------------------------------------ ;
+;                             PRIVATE FUNCTIONS                            ;
+; ------------------------------------------------------------------------ ;
+
+Switch_thread:
+	mov [Static.Current_thread], rax
+
+	push qword [Static.RIP]
 	push rbp
-	mov rbp, rsp
-
-	mov rax, .Vir_page
-	test rax, $FFF
-	jnz .Error1	; Invalid address
-
-	cmp rax, $200000
-	jae .Case2
-
-	.Case1:
-	shr rax, 12 - 3
-	mov r15, [First_page_table + rax]
-	and r15, MASK_12_LOW_BITS
-	jmp .Finish
-
-	.Case2:
-
-
-	.Finish:
-	xor rax, rax
-
-	.Return:
-	pop rbp
-	ret 8
-
-	.Error1:
-	mov rax, -1
-	Error_return
-
-	restore .Vir_page
-
-Go_to_lower_page_table:
-	.Index equ qword [rbp + 16] ; Index : Card64
-
-	push rbp
-	mov rbp, rsp
-
-	mov rax, .Index
-	cmp rax, $1FF
-	ja .Error1
-
-	mov r11, Window_page
-	bt qword [r11 + rax * 8], 0
-	jnc .Create_page_table
-
-	mov rax, [r11 + rax * 8]
-	and rax, MASK_12_LOW_BITS
-
-	push rax
-	push r11
-	call Map_one_page
-
-	jmp .Finish
-
-	.Create_page_table:
-	call Allocate_one_physical_page
-
-	or r15, 1
-	mov r11, Window_page
-	mov rax, .Index
-	mov [r11 + rax * 8], r15
-
-	btr r15, 0
-	push r15
-	push r11
-	call Map_one_page
-
-	mov r11, Window_page
-	xor rax, rax
-	.Clear_page_table:
-		mov [r11 + rax], dword 0
-		add rax, 4
-		cmp rax, $1000
-		jb .Clear_page_table
-
-	.Finish:
-	xor rax, rax
-
-	.Return:
-	pop rbp
-	ret 8
-
-	.Error1:
-	mov rax, -1
-	Error_return
-
-	restore .Index
-
-Function_Allocate:
-	.Size equ [rbp + 16]
-
-	push rbp
-	mov rbp, rsp
+	push qword [Static.RAX]
 	push rbx
+	push rcx
+	push rdx
+	push rsi
+	push rdi
+	push r8
+	push r9
+	push r10
+	push qword [Static.R11]
+	push qword [Static.R12]
+	push qword [Static.R13]
+	push r14
+	push qword [Static.R15]
+	mov [rax + TTE_RSP], rsp
 
-	mov rbx, Virtual_allocator
-	mov rax, .Size
+	mov rbx, rax
+	push qword [rbx + TTE_Module]
+	push qword [rbx + TTE_Addr_space]
+	invoke IModule, Switch_address_space
 
-	mov r15, [rbx]
-	add [rbx], rax
-	xor rax, rax
+	mov rcx, Lvl4_page_table
+	mov rax, [rbx + TTE_Lvl3_page_table]
+	or rax, 3
+	mov [rcx + 511 * 8], rax
 
-	pop rbp
-	ret 8
+	mov cr3, rcx
 
-Function_Free:
-	xor rax, rax
-	ret 8
-
-Page_fault_handler:
-	bt qword [rsp], 0
-	jc .Halt
-
-	Save_all_registers
-
-	mov rbx, System_data
-	inc qword [rbx + Page_fault_count]
-
-	call Allocate_one_physical_page
-
-	push r15
-	mov rax, cr2
-	and rax, MASK_12_LOW_BITS
-	push rax
-	call Map_one_page
-
-	.Return:
+	mov rsp, [rbx + TTE_RSP]
 	Load_all_registers
-	add rsp, 8
+	ret
+
+; ------------------------------------------------------------------------ ;
+;                             INTERRUPT HANDLER                            ;
+; ------------------------------------------------------------------------ ;
+
+Procedure_IRQ0_handler:
+	bt word [Static.Lock], 0
+	jc .Return
+
+	bt qword [Static.Flag], ENABLE_THREADING_FLAG
+	jnc .Save_registers
+	.Return:
 	iret
 
-	.Halt:
-	mov rbx, [Header.Module_addr]
-	add rbx, Static.Text2
-	push rbx
-	push 17
-	invoke IException, Write
-	cli
-	hlt
+	.Save_registers:
+	mov [Static.RAX], rax
+	mov [Static.R11], r11
+	mov [Static.R12], r12
+	mov [Static.R13], r13
+	mov [Static.R15], r15
+
+	mov r11, [Static.Current_thread]
+	test r11, r11
+	jz .Case_2
+
+	.Case_1:
+	mov r12, [r11 + TTE_Next_thread]
+	mov rax, READY
+	.Find_ready_thread:
+		cmp r12, r11
+		je .Return_not_found ; Can not found any ready thread
+		cmp [r12 + TTE_State], rax
+		je .Found
+		mov r12, [r12 + TTE_Next_thread]
+		jmp .Find_ready_thread
+
+	.Found:
+	mov rax, [rsp]
+	mov [Static.RIP], rax
+	mov rax, [Header.Module_addr]
+	add rax, Switch_thread
+	mov [rsp], rax
+	mov rax, r12
+	iret
+
+	.Return_not_found:
+	mov rax, [Static.RAX]
+	mov r11, [Static.R11]
+	mov r12, [Static.R12]
+	mov r13, [Static.R13]
+	mov r15, [Static.R15]
+	iret
+
+	.Case_2:
+	mov rax, [Static.First_thread]
+	test rax, rax
+	jz .Return_not_found
+
+	mov rbx, rax
+	mov [Static.Current_thread], rax
+
+	mov rax, .Case_2_return
+	add rax, [Header.Module_addr]
+	mov [rsp], rax
+	iret
+
+	.Case_2_return:
+	push qword [rbx + TTE_Module]
+	push qword [rbx + TTE_Addr_space]
+	invoke IModule, Switch_address_space
+
+	mov rcx, Lvl4_page_table
+	mov rax, [rbx + TTE_Lvl3_page_table]
+	or rax, 3
+	mov [rcx + 511 * 8], rax
+
+	mov cr3, rcx
+
+	mov rsp, [rbx + TTE_RSP]
+	Load_all_registers
+	ret
 
 Static:
-	.Text1 db 'Out of physical memory! Please reboot'
-	.Text2 db 'Halt - Page fault'
+	.Lock dw 0
+	.Flag dq 0
+	.First_thread dq 0
+	.Last_thread dq 0
+	.Current_thread dq 0
+	.RIP dq 0
+	.RAX dq 0
+	.R11 dq 0
+	.R12 dq 0
+	.R13 dq 0
+	.R15 dq 0

@@ -37,6 +37,12 @@ PXE_Loader:
 	test ax, ax
 	jnz Abort
 
+	push Var.Module_Module
+	push dword $42000
+	call Function_Download_File
+	test ax, ax
+	jnz Abort
+
 	call Procedure_PXE_Finish
 
 Switch_to_Protected_Mode:
@@ -57,6 +63,7 @@ Var:
 	.Loader4_Module db 11,0,'Loader4.bin'
 	.Excp_Module db 8,0,'Excp.bin'
 	.Memory_Module db 10,0,'Memory.bin'
+	.Module_Module db 10,0,'Module.bin'
 
 Halt:
 	hlt
