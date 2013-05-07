@@ -67,6 +67,15 @@ Function_Init:
 		cmp rax, Header - Interface
 		jb .Loop
 
+	mov rax, Procedure_IRQ0_handler
+	add rax, rbx
+	push 0
+	push rax
+	invoke IPIC, Install_IRQ_handler
+
+	push 0
+	invoke IPIC, Enable_IRQ
+
 	.Return:
 	xor rax, rax
 	ret
@@ -121,10 +130,14 @@ Function_New_thread:
 		jb .Loop1
 		jmp .Error1
 
+	; Found a free entry, next is creating a new thread
 	.Found:
 	mov [r15 + r11 + TTE_Module], rbx
+	mov rax, BLOCKED
+	mov [r15 + r11 + TTE_State], rax
 	lea rbx, [r15 + r11]
 	mov .Result, r11
+
 	mov rax, .Addr_space
 	mov [rbx + TTE_Addr_space], rax
 
@@ -288,6 +301,7 @@ Function_Disable_threading:
 ; ------------------------------------------------------------------------ ;
 
 Switch_thread:
+	mov rax, [Static.Next_thread_to_be_run]
 	mov [Static.Current_thread], rax
 
 	push qword [Static.RIP]
@@ -329,31 +343,30 @@ Switch_thread:
 ; ------------------------------------------------------------------------ ;
 
 Procedure_IRQ0_handler:
-	bt word [Static.Lock], 0
-	jc .Return
-
-	bt qword [Static.Flag], ENABLE_THREADING_FLAG
-	jnc .Save_registers
-	.Return:
-	iret
-
-	.Save_registers:
+	; Save registers
 	mov [Static.RAX], rax
 	mov [Static.R11], r11
 	mov [Static.R12], r12
 	mov [Static.R13], r13
 	mov [Static.R15], r15
 
+	bt word [Static.Lock], 0
+	jc .Return_failed
+
+	bt qword [Static.Flag], ENABLE_THREADING_FLAG
+	jnc .Return_failed
+
+	; Check if current thread is existed
 	mov r11, [Static.Current_thread]
 	test r11, r11
 	jz .Case_2
 
-	.Case_1:
+	.Case_1:	; If current thread is existed
 	mov r12, [r11 + TTE_Next_thread]
 	mov rax, READY
 	.Find_ready_thread:
 		cmp r12, r11
-		je .Return_not_found ; Can not found any ready thread
+		je .Return_failed ; Can not found any ready thread
 		cmp [r12 + TTE_State], rax
 		je .Found
 		mov r12, [r12 + TTE_Next_thread]
@@ -365,31 +378,31 @@ Procedure_IRQ0_handler:
 	mov rax, [Header.Module_addr]
 	add rax, Switch_thread
 	mov [rsp], rax
-	mov rax, r12
+	mov [Static.Next_thread_to_be_run], r12
+
+	push 0
+	invoke IPIC, Send_EOI
+
 	iret
 
-	.Return_not_found:
-	mov rax, [Static.RAX]
-	mov r11, [Static.R11]
-	mov r12, [Static.R12]
-	mov r13, [Static.R13]
-	mov r15, [Static.R15]
-	iret
-
+	; This case happen only in first run
 	.Case_2:
 	mov rax, [Static.First_thread]
 	test rax, rax
-	jz .Return_not_found
+	jz .Return_failed
 
 	mov rbx, rax
 	mov [Static.Current_thread], rax
 
-	mov rax, .Case_2_return
+	mov rax, .Start_first_thread
 	add rax, [Header.Module_addr]
 	mov [rsp], rax
+
+	push 0
+	invoke IPIC, Send_EOI
 	iret
 
-	.Case_2_return:
+	.Start_first_thread:
 	push qword [rbx + TTE_Module]
 	push qword [rbx + TTE_Addr_space]
 	invoke IModule, Switch_address_space
@@ -398,12 +411,23 @@ Procedure_IRQ0_handler:
 	mov rax, [rbx + TTE_Lvl3_page_table]
 	or rax, 3
 	mov [rcx + 511 * 8], rax
-
 	mov cr3, rcx
 
 	mov rsp, [rbx + TTE_RSP]
 	Load_all_registers
 	ret
+
+	.Return_failed:
+	push 0
+	invoke IPIC, Send_EOI
+
+	mov rax, [Static.RAX]
+	mov r11, [Static.R11]
+	mov r12, [Static.R12]
+	mov r13, [Static.R13]
+	mov r15, [Static.R15]
+
+	iret
 
 Static:
 	.Lock dw 0
@@ -417,3 +441,4 @@ Static:
 	.R12 dq 0
 	.R13 dq 0
 	.R15 dq 0
+	.Next_thread_to_be_run dq 0

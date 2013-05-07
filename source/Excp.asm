@@ -17,7 +17,7 @@ use64
 ; Function 2: Write (var Text : Array of Ansi_char; Count : Byte)
 ; Function 3: Write_line (var Text : Array of Ansi_char; Count : Byte)
 ; Function 4: Card64_to_hex (Num : Card64; out Hex_str : Array [16] of Ansi_char)
-; Function 5: Card64_to_decimal (Num : Card64; out Dec_str : Array [20] of Ansi_char) : Card64;
+; Function 5: Card64_to_decimal (Num : Card64; out Dec_str : Array [20] of Ansi_char) : Card64
 
 jmp near Function_Init
 dq Header
@@ -31,7 +31,6 @@ Interface:
 Header:
 	.Module_addr dq 0
 	.Module_id dq 1, 0
-
 Const:
 	System_data = $10000
 	IDT = $6000
@@ -172,6 +171,7 @@ Function_Write_line: ; Function 3
 
 	push rbp
 	mov rbp, rsp
+	push rbx
 
 	push qword .Text
 	push qword .Count
@@ -180,7 +180,6 @@ Function_Write_line: ; Function 3
 	test rax, rax
 	jnz .Return
 
-	push rbx
 	mov ax, [Static.Video_cursor]
 	mov bl, 80
 	div bl
@@ -188,14 +187,18 @@ Function_Write_line: ; Function 3
 	jz .Finish
 
 	inc al
-	mul bl
-	mov [Static.Video_cursor], ax
+	cmp al, 25
+	jb .Finish
+
+	xor al, al
 
 	.Finish:
-	pop rbx
+	mul bl
+	mov [Static.Video_cursor], ax
 	xor rax, rax
 
 	.Return:
+	pop rbx
 	pop rbp
 	ret 16
 

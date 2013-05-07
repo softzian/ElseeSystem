@@ -68,6 +68,29 @@ macro Raise_error x, func_id, mod_id
 	jmp qword [dword System_data + Error_handler]
 }
 
+macro Debug_write_line x
+{
+	push rax
+	push r11
+	push r12
+	push r13
+	push r15
+
+	push x
+	push 0
+	invoke IException, Card64_to_hex
+
+	push 0
+	push 16
+	invoke IException, Write_line
+
+	pop r15
+	pop r13
+	pop r12
+	pop r11
+	pop rax
+}
+
 MASK_12_LOW_BITS = $FFFFFFFFFFFFF000
 
 IException = $100000
@@ -83,6 +106,7 @@ IMemory.Free = 8
 IMemory.Allocate_physical_page = 16
 IMemory.Free_physical_page = 24
 IMemory.Map_one_page = 32
+IMemory.Trace_page_table = 40
 
 IModule = $100020
 IModule.Register_module = 0
@@ -92,12 +116,12 @@ IModule.Switch_address_space = 24
 IModule.Get_thread_table = 32
 IModule.Set_thread_table = 40
 
-IInterrupt = $100030
-IInterrupt.Install_IRQ_direct_handler = 0
-IInterrupt.Mask_all_IRQ = 8
-IInterrupt.Enable_IRQ = 16
-IInterrupt.Disable_IRQ = 24
-IInterrupt.Send_EOI = 32
+IPIC = $100030
+IPIC.Install_IRQ_handler = 0
+IPIC.Mask_all_IRQ = 8
+IPIC.Enable_IRQ = 16
+IPIC.Disable_IRQ = 24
+IPIC.Send_EOI = 32
 
 IThread = $100040
 IThread.New_thread = 0

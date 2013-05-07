@@ -12,8 +12,8 @@
 include 'include\Header.inc'
 use64
 
-; IInterrupt
-; Function 1: Install_IRQ_direct_handler (IRQ : Byte; Entry_point : Address)
+; IPIC
+; Function 1: Install_IRQ_handler (IRQ : Byte; Entry_point : Address)
 ; Function 2: Mask_all_IRQ
 ; Function 3: Enable_IRQ (IRQ : Byte)
 ; Function 4: Disable_IRQ (IRQ : Byte)
@@ -22,7 +22,7 @@ use64
 jmp near Function_Init
 dq Header
 Interface:
-	dq Function_Install_IRQ_direct_handler
+	dq Function_Install_IRQ_handler
 	dq Function_Mask_all_IRQ
 	dq Function_Enable_IRQ
 	dq Function_Disable_IRQ
@@ -30,13 +30,12 @@ Interface:
 Header:
 	.Module_addr dq 0
 	.Module_id dq 4, 0
-
 Const:
 
 Function_Init:
 	mov rbx, rax
 	lea rsi, [rax + Interface]
-	mov rax, IInterrupt
+	mov rax, IPIC
 	mov [rax], rbx
 	mov [rax + 8], rsi
 	mov [Header.Module_addr], rbx
@@ -52,6 +51,9 @@ Function_Init:
 	push qword [Header.Module_id]
 	push qword [Header.Module_id + 8]
 	invoke IModule, Register_module
+
+	call Function_Init_PIC
+	call Function_Mask_all_IRQ
 
 	.Return:
 	xor rax, rax
@@ -79,7 +81,7 @@ Function_Init_PIC:
 	xor rax, rax
 	ret
 
-Function_Install_IRQ_direct_handler: ; Function 1
+Function_Install_IRQ_handler: ; Function 1
 	.IRQ equ byte [rbp + 24]
 	.Entry_point equ qword [rbp + 16]
 
@@ -107,7 +109,7 @@ Function_Install_IRQ_direct_handler: ; Function 1
 
 Function_Mask_all_IRQ: ; Function 2
 	push rbp
-	mov rsp, rbp
+	mov rbp, rsp
 
 	mov al, 11111011b
 	mov [Static.IRQMask1], al
@@ -126,7 +128,7 @@ Function_Enable_IRQ:
 	.IRQ equ byte [rbp + 16]
 
 	push rbp
-	mov rsp, rbp
+	mov rbp, rsp
 
 	movzx r11, .IRQ
 

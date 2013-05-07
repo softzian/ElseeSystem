@@ -18,6 +18,7 @@ use64
 ; Function 3: Allocate_physical_page : Physical_address
 ; Function 4: Free_physical_page (Phy_page : Physical_address)
 ; Function 5: Map_one_page (Phy_page : Physical_address; Vir_page : Address)
+; Function 6: Trace_page_table (Vir_addr : Address)
 
 jmp near Function_Init
 dq Header
@@ -27,6 +28,7 @@ Interface:
 	dq Function_Allocate_physical_page
 	dq Function_Free_physical_page
 	dq Function_Map_one_page
+	dq Function_Trace_page_table
 Header:
 	.Module_addr dq 0
 	.Module_id dq 2, 0
@@ -285,6 +287,7 @@ Function_Map_one_page: ; Function 5
 	and rax, $102
 	inc rax
 	or rcx, rax
+
 	mov [First_page_table + rbx], rcx
 	jmp .Finish
 
@@ -344,6 +347,124 @@ Function_Map_one_page: ; Function 5
 	restore .Phy_page
 	restore .Vir_page
 	restore .Flag
+
+Function_Trace_page_table:	; Function 6
+	.Vir_addr equ qword [rbp + 16]
+
+	enter 0, 0
+
+	mov r11, .Vir_addr
+	shr r11, 12 + 9 * 3
+	and r11, $1FF
+
+	mov r12, Lvl4_page_table
+	mov r13, [r12 + r11 * 8]
+
+	push r13
+
+	push r13
+	push 0
+	invoke IException, Card64_to_hex
+
+	push 0
+	push 16
+	invoke IException, Write_line
+
+	pop r13
+
+	bt r13, 0
+	jnc .Return
+
+	and r13, MASK_12_LOW_BITS
+	push r13
+	push Window_page
+	push $100
+	call Function_Map_one_page
+
+	;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+	mov r11, .Vir_addr
+	shr r11, 12 + 9 * 2
+	and r11, $1FF
+
+	mov r12, Window_page
+	mov r13, [r12 + r11 * 8]
+
+	push r13
+
+	push r13
+	push 0
+	invoke IException, Card64_to_hex
+
+	push 0
+	push 16
+	invoke IException, Write_line
+
+	pop r13
+
+	bt r13, 0
+	jnc .Return
+
+	and r13, MASK_12_LOW_BITS
+	push r13
+	push Window_page
+	push $100
+	call Function_Map_one_page
+
+	;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+	mov r11, .Vir_addr
+	shr r11, 12 + 9
+	and r11, $1FF
+
+	mov r12, Window_page
+	mov r13, [r12 + r11 * 8]
+
+	push r13
+
+	push r13
+	push 0
+	invoke IException, Card64_to_hex
+
+	push 0
+	push 16
+	invoke IException, Write_line
+
+	pop r13
+
+	bt r13, 0
+	jnc .Return
+
+	and r13, MASK_12_LOW_BITS
+	push r13
+	push Window_page
+	push $100
+	call Function_Map_one_page
+
+	;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+	mov r11, .Vir_addr
+	shr r11, 12
+	and r11, $1FF
+
+	mov r12, Window_page
+	mov r13, [r12 + r11 * 8]
+
+	push r13
+	push 0
+	invoke IException, Card64_to_hex
+
+	push 0
+	push 16
+	invoke IException, Write_line
+
+	;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+	.Return:
+	leave
+	ret 8
+
+	restore .Vir_addr
 
 ; ------------------------------------------------------------------------ ;
 ;                             PRIVATE FUNCTIONS                            ;
@@ -479,9 +600,10 @@ Page_fault_handler:
 	call Function_Allocate_physical_page
 
 	push r15
+	mov rax, cr2
 	and rax, MASK_12_LOW_BITS
 	push rax
-	push $102
+	push $0
 	call Function_Map_one_page
 
 	jmp .Return
@@ -495,9 +617,10 @@ Page_fault_handler:
 	call Function_Allocate_physical_page
 
 	push r15
+	mov rax, cr2
 	and rax, MASK_12_LOW_BITS
 	push rax
-	push $102
+	push $2
 	call Function_Map_one_page
 
 	.Return:

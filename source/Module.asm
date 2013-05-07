@@ -244,6 +244,7 @@ Function_New_address_space: ; Function 3
 	push r15
 	mov rbx, Window_page
 	push rbx
+	push $100
 	invoke IMemory, Map_one_page
 	test rax, rax
 	jnz .Error4
@@ -319,12 +320,21 @@ Function_Switch_address_space: ; Function 4
 	jz .Error3
 
 	mov r12, .Address_space_id
-	test r12, r12
-	jz .Error4
 
 	cmp r12, $1000 / 8
-	ja .Error4
+	ja .Error4	; Address space id out of table range
 
+	test r12, r12
+	jnz .Switch_address_space      ; If Address space id = 0, that mean no address space to switch
+
+	; In that case, invalid the memory area used to access process data
+	xor rax, rax
+	mov r11, Lvl4_page_table
+	mov [r11 + 256 * 8], rax
+	mov cr3, r11
+	jmp .Return
+
+	.Switch_address_space:
 	dec r12
 	shl r12, 3
 
@@ -369,8 +379,9 @@ Function_Get_thread_table:
 	shl r12, 6
 
 	mov r15, [r11 + r12 + MTE_Module_thread_table]
+
 	test r15, r15
-	jnz .Not_exist
+	jz .Not_exist
 
 	xor rax, rax
 

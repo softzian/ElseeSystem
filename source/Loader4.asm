@@ -141,7 +141,42 @@ Init_core_system:
 	push 0
 	invoke IModule, Register_module
 
-	push r15
+	call Test_address_space
+
+	mov rax, $23000
+	call rax
+
+	mov rax, $24000
+	call rax
+
+	push 2
+	push 0
+	push Main_thread
+	invoke IThread, New_thread
+
+	push 2
+	push 0
+	push Second_thread
+	invoke IThread, New_thread
+
+	push 2
+	push 1
+	invoke IThread, Start_thread
+
+	push 2
+	push 2
+	invoke IThread, Start_thread
+
+	invoke IThread, Enable_threading
+
+	sti
+
+Halt:
+	hlt
+	jmp Halt
+
+Test_address_space:
+	push 2
 	invoke IModule, New_address_space
 
 	push 2
@@ -179,6 +214,34 @@ Init_core_system:
 	push 16
 	invoke IException, Write_line
 
+	ret
+
+Main_thread:
+	mov rbx, $2000
+
+	push qword [rbx]
+	push 0
+	invoke IException, Card64_to_hex
+
+	push 0
+	push 16
+	invoke IException, Write_line
+
 	hlt
+	jmp Main_thread
+
+Second_thread:
+	mov rbx, $2000
+
+	push qword rbx
+	push 0
+	invoke IException, Card64_to_hex
+
+	push 0
+	push 16
+	invoke IException, Write_line
+
+	hlt
+	jmp Second_thread
 
 Static:

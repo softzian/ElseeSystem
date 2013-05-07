@@ -43,7 +43,36 @@ PXE_Loader:
 	test ax, ax
 	jnz Abort
 
+	push Var.8259A_Module
+	push dword $43000
+	call Function_Download_File
+	test ax, ax
+	jnz Abort
+
+	push Var.Thread_Module
+	push dword $44000
+	call Function_Download_File
+	test ax, ax
+	jnz Abort
+
 	call Procedure_PXE_Finish
+
+	push ds
+	xor ax, ax
+	mov ds, ax
+	mov [$F000], ax
+	mov [$F002], ax
+	mov ax, $E801
+	int $15
+	test ax, ax
+	jz .Use_CX
+	mov [$F000], ax
+	mov [$F002], bx
+	jmp .j1
+	.Use_CX:
+	mov [$F000], cx
+	mov [$F002], dx
+	.j1: pop ds
 
 Switch_to_Protected_Mode:
 	cli
@@ -64,6 +93,8 @@ Var:
 	.Excp_Module db 8,0,'Excp.bin'
 	.Memory_Module db 10,0,'Memory.bin'
 	.Module_Module db 10,0,'Module.bin'
+	.8259A_Module db 9,0,'8259A.bin'
+	.Thread_Module db 10,0,'Thread.bin'
 
 Halt:
 	hlt
