@@ -31,11 +31,6 @@ Header:
 Const:
 	System_data = $10000
 
-	Lvl4_page_table = $2000
-	Window_page = $122000
-
-	Thread_stack = $FFFFFF8000000000
-
 	SizeOf_Thread_table = $1000
 	SizeOf_TTE = 64
 	TTE_State = 0
@@ -101,8 +96,7 @@ Function_New_thread:
 	jz .Find_free_entry
 
 	.Create_thread_table:
-	push SizeOf_Thread_table / $1000
-	invoke IMemory, Allocate
+	invoke IMemory, Allocate_16KB
 
 	push r15
 
@@ -141,75 +135,14 @@ Function_New_thread:
 	mov rax, .Addr_space
 	mov [rbx + TTE_Addr_space], rax
 
-	invoke IMemory, Allocate_physical_page
+	invoke IMemory, New_thread_stack
 
 	mov [rbx + TTE_Lvl3_page_table], r15
 
-	push r15
-	push Window_page
-	push $100
-	invoke IMemory, Map_one_page
-
-	xor r11, r11
-	.Clear_lvl3_page_table:
-		mov [Window_page + r11], dword 0
-		add r11, 4
-		cmp r11, $1000
-		jb .Clear_lvl3_page_table
-
-	invoke IMemory, Allocate_physical_page
-
-	mov rax, r15
-	or rax, 3
-	mov r11, Window_page
-	mov [r11 + 511 * 8], rax
-
-	push r15
-	push r11
-	push $100
-	invoke IMemory, Map_one_page
-
-	xor r11, r11
-	.Clear_lvl2_page_table:
-		mov [Window_page + r11], dword 0
-		add r11, 4
-		cmp r11, $1000
-		jb .Clear_lvl2_page_table
-
-	invoke IMemory, Allocate_physical_page
-
-	mov rax, r15
-	or rax, 3
-	mov r11, Window_page
-	mov [r11 + 511 * 8], rax
-
-	push r15
-	push r11
-	push $100
-	invoke IMemory, Map_one_page
-
-	xor r11, r11
-	.Clear_lvl1_page_table:
-		mov [Window_page + r11], dword 0
-		add r11, 4
-		cmp r11, $1000
-		jb .Clear_lvl1_page_table
-
-	invoke IMemory, Allocate_physical_page
-
-	mov rax, r15
-	or rax, 3
-	mov r11, Window_page
-	mov [r11 + 511 * 8], rax
-
-	push r15
-	push r11
-	push $100
-	invoke IMemory, Map_one_page
-
-	mov r11, Window_page + $FF8
+	mov r11, $FFFF817FFFFFFFF8
 	mov rax, .Entry_point
 	mov [r11], rax
+	Debug_write_line qword [r11]
 	mov r12, 15
 	xor rax, rax
 	.Loop2:
@@ -218,7 +151,7 @@ Function_New_thread:
 		dec r12
 		jnz .Loop2
 
-	mov rax, $FFFFFFFFFFFFFF80
+	mov rax, $FFFF80FFFFFFFF80
 	mov [rbx + TTE_RSP], rax
 
 	xor rax, rax
@@ -301,9 +234,6 @@ Function_Disable_threading:
 ; ------------------------------------------------------------------------ ;
 
 Switch_thread:
-	mov rax, [Static.Next_thread_to_be_run]
-	mov [Static.Current_thread], rax
-
 	push qword [Static.RIP]
 	push rbp
 	push qword [Static.RAX]
@@ -320,19 +250,19 @@ Switch_thread:
 	push qword [Static.R13]
 	push r14
 	push qword [Static.R15]
+
+	mov rax, [Static.Current_thread]
 	mov [rax + TTE_RSP], rsp
 
-	mov rbx, rax
+	mov rbx, [Static.Next_thread_to_be_run]
+	mov [Static.Current_thread], rbx
+
 	push qword [rbx + TTE_Module]
 	push qword [rbx + TTE_Addr_space]
 	invoke IModule, Switch_address_space
 
-	mov rcx, Lvl4_page_table
-	mov rax, [rbx + TTE_Lvl3_page_table]
-	or rax, 3
-	mov [rcx + 511 * 8], rax
-
-	mov cr3, rcx
+	push qword [rbx + TTE_Lvl3_page_table]
+	invoke IMemory, Switch_thread_stack
 
 	mov rsp, [rbx + TTE_RSP]
 	Load_all_registers
@@ -407,11 +337,8 @@ Procedure_IRQ0_handler:
 	push qword [rbx + TTE_Addr_space]
 	invoke IModule, Switch_address_space
 
-	mov rcx, Lvl4_page_table
-	mov rax, [rbx + TTE_Lvl3_page_table]
-	or rax, 3
-	mov [rcx + 511 * 8], rax
-	mov cr3, rcx
+	push qword [rbx + TTE_Lvl3_page_table]
+	invoke IMemory, Switch_thread_stack
 
 	mov rsp, [rbx + TTE_RSP]
 	Load_all_registers

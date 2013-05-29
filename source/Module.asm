@@ -36,9 +36,6 @@ Header:
 Const:
 	System_data = $10000
 
-	Lvl4_page_table = $2000
-	Window_page = $121000
-
 	SizeOf_Module_table = $4000
 
 	; MTE is Module table entry
@@ -63,8 +60,7 @@ Function_Init:
 		cmp rax, Header - Interface
 		jb .Loop
 
-	push 4
-	invoke IMemory, Allocate
+	invoke IMemory, Allocate_16KB
 
 	mov rsi, r15
 	mov [Static.Module_table], r15
@@ -213,8 +209,7 @@ Function_New_address_space: ; Function 3
 	jnz .Continue
 
 	.Create_table:
-	push 1
-	invoke IMemory, Allocate
+	invoke IMemory, Allocate_16KB
 
 	test rax, rax
 	jnz .Error2
@@ -235,30 +230,14 @@ Function_New_address_space: ; Function 3
 		jmp .No_free
 
 	.Found:
-	invoke IMemory, Allocate_physical_page
-	test rax, rax
-	jnz .Error3
-
+	invoke IMemory, New_address_space
 	mov [rbx + rcx], r15
 
-	push r15
-	mov rbx, Window_page
-	push rbx
-	push $100
-	invoke IMemory, Map_one_page
-	test rax, rax
-	jnz .Error4
-
+	shr rcx, 8
+	inc rcx
 	mov r15, rcx
-	inc r15
 
-	xor rcx, rcx
 	xor rax, rax
-	.Clear_lvl3_page_table:
-		mov [rbx + rcx], rax
-		add rcx, 8
-		cmp rcx, $1000
-		jb .Clear_lvl3_page_table
 
 	.Return:
 	pop rcx
@@ -327,11 +306,10 @@ Function_Switch_address_space: ; Function 4
 	test r12, r12
 	jnz .Switch_address_space      ; If Address space id = 0, that mean no address space to switch
 
-	; In that case, invalid the memory area used to access process data
-	xor rax, rax
-	mov r11, Lvl4_page_table
-	mov [r11 + 256 * 8], rax
-	mov cr3, r11
+	; In that case, unmap the current address space
+	push 0
+	invoke IMemory, Switch_address_space
+
 	jmp .Return
 
 	.Switch_address_space:
@@ -342,14 +320,8 @@ Function_Switch_address_space: ; Function 4
 	test rax, rax
 	jz .Error5
 
-	test rax, $FFF
-	jnz .Error5
-
-	or rax, 1
-	mov r11, Lvl4_page_table
-	mov [r11 + 256 * 8], rax
-
-	mov cr3, r11
+	push qword [r11 + r12]
+	invoke IMemory, Switch_address_space
 
 	xor rax, rax
 

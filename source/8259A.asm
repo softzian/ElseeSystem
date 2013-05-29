@@ -156,9 +156,9 @@ Function_Disable_IRQ:
 
 	movzx r11, .IRQ
 
-	mov ax, word [fs:ebx + Static.IRQMask1]
+	mov ax, word [Static.IRQMask1]
 	bts ax, r11w
-	mov word [fs:ebx + Static.IRQMask1], ax
+	mov word [Static.IRQMask1], ax
 
 	out $21, al
 	mov al, ah

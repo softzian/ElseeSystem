@@ -68,7 +68,9 @@ Enter_Long_mode:
 		cmp ecx, $1000
 		jb .Zero_fill_PML4
 
-	mov [ebx], dword First_page_directory_pointer_table + 1
+	mov [ebx + 511 * 8], dword Lvl4_page_map_table + $101
+
+	mov [ebx], dword First_page_directory_pointer_table + $101
 	mov ebx, First_page_directory_pointer_table
 
 	xor ecx, ecx
@@ -78,7 +80,7 @@ Enter_Long_mode:
 		cmp ecx, $1000
 		jb .Zero_fill_page_directory_pointer_table
 
-	mov [ebx], dword First_page_directory + 1
+	mov [ebx], dword First_page_directory + $101
 	mov ebx, First_page_directory
 
 	xor ecx, ecx
@@ -88,7 +90,7 @@ Enter_Long_mode:
 		cmp ecx, $1000
 		jb .Zero_fill_page_directory
 
-	mov [ebx], dword First_page_table + 1
+	mov [ebx], dword First_page_table + $101
 	mov ebx, First_page_table
 
 	xor ecx, ecx

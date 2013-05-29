@@ -101,12 +101,13 @@ IException.Card64_to_hex = 24
 IException.Card64_to_decimal = 32
 
 IMemory = $100010
-IMemory.Allocate = 0
-IMemory.Free = 8
-IMemory.Allocate_physical_page = 16
-IMemory.Free_physical_page = 24
-IMemory.Map_one_page = 32
-IMemory.Trace_page_table = 40
+IMemory.Allocate_16KB = 0
+IMemory.Free_16KB = 8
+IMemory.Trace_page_table = 16
+IMemory.New_address_space = 24
+IMemory.Switch_address_space = 32
+IMemory.New_thread_stack = 40
+IMemory.Switch_thread_stack = 48
 
 IModule = $100020
 IModule.Register_module = 0
